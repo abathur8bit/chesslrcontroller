@@ -14,9 +14,9 @@ include_directories(/usr/local/include)
 link_directories(/usr/local/lib)
 
 add_executable(chesslrcontroller src/main/cpp/controller.cpp )
-add_executable(actiontest src/main/cpp/actiontest.cpp )
+#add_executable(actiontest src/main/cpp/actiontest.cpp )
 #add_executable(boardtest src/main/cpp/boardtest.cpp)
 
 target_link_libraries(chesslrcontroller PRIVATE ssobjects wiringPi pthread)
-target_link_libraries(actiontest PRIVATE ssobjects wiringPi pthread)
+#target_link_libraries(actiontest PRIVATE ssobjects wiringPi pthread)
 #target_link_libraries(boardtest PRIVATE ssobjects wiringPi pthread)

@@ -27,13 +27,16 @@ public:
     }
     ChessAction(json j) //: m_action(),m_moves(),m_numMoves(0)
     {
+        m_numMoves=0;
         m_action = j["action"];
         auto s = j["moves"];
-        int num = s.size();
-        m_numMoves = num;
-        for (int i = 0; i < num; i++) {
-            m_moves[i] = ChessMove(s[i]);
+        if(s != nullptr) {
+            int num = s.size();
+            m_numMoves = num;
+            for (int i = 0; i < num; i++) {
+                m_moves[i] = ChessMove(s[i]);
 //            printf("move %d = %s\n",i,m_moves[i].c_str());
+            }
         }
     }
 };

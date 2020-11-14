@@ -63,13 +63,13 @@ public:
 
     ChessMove() {}
     ChessMove(json j) {
-        m_from = str_toupper(j["m_from"]);
+        m_from = str_toupper(j["from"]);
         m_to = str_toupper(j["to"]);
-        m_type = j["m_type"];
+        m_type = j["type"];
     }
 
     char* c_str() {
-        snprintf(buff, sizeof(buff), "%s%s m_type=%s", m_from.c_str(), m_to.c_str(), m_type.c_str());
+        snprintf(buff, sizeof(buff), "%s%s type=%s", m_from.c_str(), m_to.c_str(), m_type.c_str());
         return buff;
     }
 };

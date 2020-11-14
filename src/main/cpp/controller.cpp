@@ -81,6 +81,7 @@ public:
     int input[64];
     int output[64];
     int squareState[64];
+    int ledState[64];
     const char* rowNames="87654321";
     const char* colNames="ABCDEFGH";
     int mcp[8];
@@ -126,57 +127,70 @@ public:
             input[i+1]=t;
         }
         for(int i=0; i<64; i++) {
-            squareState[i] = digitalRead(input[i]);
+            squareState[i] = digitalRead(input[i]); //1=empty 0=occupied
+            ledState[i] = 0;
         }
-        printf("Press any key\n");
-        getchar();
+//        printf("Press any key\n");
+//        getchar();
     }
     void processSingleMsg(PacketMessage* pmsg)
     {
-      TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
-      PacketBuffer* ppacket = pmsg->packet();
-      switch(ppacket->getCmd())
-      {
-        //One way to handle the message. Process and reply within the switch.
-        case PacketBuffer::pcNewConnection:   onConnection(pmsg);   break;
-        case PacketBuffer::pcClosed:          printf("Connection closed.\n");          break;
-        case TelnetServerSocket::pcFullLine:  onFullLine(pmsg);        break;
-      }
-      DELETE_NULL(ppacket);   //IMPORTANT! The packet is no longer needed. You must delete it.
+        TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
+        PacketBuffer* ppacket = pmsg->packet();
+        switch(ppacket->getCmd())
+        {
+            //One way to handle the message. Process and reply within the switch.
+            case PacketBuffer::pcNewConnection:   onConnection(pmsg);   break;
+            case PacketBuffer::pcClosed:          printf("Connection closed.\n");          break;
+            case TelnetServerSocket::pcFullLine:  onFullLine(pmsg);        break;
+        }
+        DELETE_NULL(ppacket);   //IMPORTANT! The packet is no longer needed. You must delete it.
     }
 
-	ChessAction* parseJson(const char* s) {
-		json j = json::parse(s);
-		ChessAction* c = new ChessAction(j);
-		return c;
-	}
+    ChessAction* parseJson(const char* s) {
+        json j = json::parse(s);
+        printf("parseJson creating chess action\n");
+        ChessAction* c = new ChessAction(j);
+        return c;
+    }
 
     void onFullLine(PacketMessage* pmsg)
     {
-      TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
-      char* pszString = (char*)pmsg->packet()->getBuffer();
-      printf("Got from client: [%s]\n",pszString);
+        TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
+        char* pszString = (char*)pmsg->packet()->getBuffer();
+        printf("Got from client: [%s]\n",pszString);
 
-      ChessAction* ca = parseJson(pszString);
-		printf("action %s num moves=%d\n",ca->action(),ca->numMoves());
-		for(int i=0; i<ca->numMoves(); i++)
-		{
-			psocket->println("move %d = %s index %d %d",i,ca->move(i).c_str(),ca->move(i).fromIndex(),ca->move(i).toIndex());
-			psocket->println("row %c col %c",ca->move(i).toRow(0),ca->move(i).toCol(0));
-			psocket->println("row %c col %c",ca->move(i).toRow(63),ca->move(i).toCol(63));
-			
-			squareState[ca->move(i).fromIndex()]=0;
-			squareState[ca->move(i).toIndex()]=0;
-		}
+        try {
+            json j = json::parse(pszString);
+            string action = j["action"];
+            printf("parsed and have action = %s\n",action.c_str());
+            if(!action.compare("move")) {
+                ChessAction *ca = parseJson(pszString);
+                printf("action %s num moves=%d\n", ca->action(), ca->numMoves());
+                for (int i = 0; i < ca->numMoves(); i++) {
+                    psocket->println("move %d = %s index %d %d", i, ca->move(i).c_str(), ca->move(i).fromIndex(), ca->move(i).toIndex());
+                    psocket->println("row %c col %c", ca->move(i).toRow(0), ca->move(i).toCol(0));
+                    psocket->println("row %c col %c", ca->move(i).toRow(63), ca->move(i).toCol(63));
 
-      psocket->println("Action=%s",ca->action());
-      //psocket->close();
-		delete ca;
+                    ledState[ca->move(i).fromIndex()] = 1;
+                    ledState[ca->move(i).toIndex()] = 1;
+                }
+
+                psocket->println("Action=%s", ca->action());
+                delete ca;
+            } else if(!action.compare("ping")) {
+                psocket->println("pong");
+            } else {
+                psocket->println("invalid");
+            }
+        } catch(json::parse_error& e) {
+            psocket->println("json parse error: %s",e.what());
+        }
     }
     void onConnection(PacketMessage* pmsg)
     {
         TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
-        psocket->println("Daytime");
+        psocket->println("Hello");
     }
     char toRow(int index) {
         int y = index/8;
@@ -192,18 +206,28 @@ public:
     void idle(unsigned32 now) {
         char buffer[80];
         for(int i=0; i<64; i++) {
-            int state = squareState[i];
-			printf("%d ",state);
-//            int state = digitalRead(input[i]);
-//            if(state != squareState[i]) {
-//                snprintf(buffer,sizeof(buffer),"square %d state changed from %d to %d piece %s %c%c\r\n",i,squareState[i],state,(state ? "up":"down"),toCol(i),toRow(i));
-//                printf("%s",buffer);
-//                squareState[i] = state;
-//                send2All(buffer);
-//            }
-            digitalWrite(output[i],state?0:1);
+            int state = digitalRead(input[i]);
+            if(state != squareState[i]) {
+                snprintf(buffer,sizeof(buffer),"piece at %c%c is now %s\n",toCol(i),toRow(i),(occupied(state)?"occupied":"empty"));
+                printf(buffer);
+                send2All(buffer);
+            }
+            squareState[i] = state;
+            digitalWrite(output[i],ledState[i]);
         }
-		printf("");
+        printf("");
+    }
+
+    // Return true if the square is occupied, false otherwise.
+    bool isSquareOccupied(int index) {
+        return squareState[index]==1;   //0=occupied, 1=not
+    }
+    // Return true if the state given means the square is occupied, false otherwise
+    bool occupied(int state) {
+        return state==0;
+    }
+    void led(int index,bool on) {
+
     }
 };
 
@@ -380,6 +404,7 @@ void allrows(bool swap) {
 
 
 }
+
 int main(int argc,char* argv[]) {
     bool swap=false;
     unsigned16 wPort = 9999;
@@ -390,7 +415,7 @@ int main(int argc,char* argv[]) {
             wPort = atoi(argv[++i]);
         }
     }
-    printf("binding\n");
+    printf("binding to port %d\n",wPort);
     SockAddr saBind((ULONG)INADDR_ANY,wPort);
     printf("construction\n");
     ControllerServer server(saBind,swap);
