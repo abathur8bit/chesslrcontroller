@@ -31,7 +31,7 @@ To send chesslrcontroller commands, you connect make a tcp/ip connection to port
 
 To test connectivity:
 
-    $ echo '{"action":"ping"}' | nc -C localhost 9999
+    $ echo '{"action":"ping"}' | nc -C -N localhost 9999
     Hello
     pong
 
@@ -41,7 +41,7 @@ When you first connect, the controller will send a *Hello*. Then the json comman
 
 To light up a square on the board
 
-    $ echo '{"action":"move","description":null,"moves":[{"from":"a2","to":"a3","type":"move"}]}' | nc -C localhost 9999
+    $ echo '{"action":"move","description":null,"moves":[{"from":"a2","to":"a3","type":"move"}]}' | nc -C -N localhost 9999
     Hello
     move 0 = A2A3 type=move index 48 40
     row 8 col A
@@ -109,3 +109,9 @@ Multiline:
 }
 ```
 
+# TODO
+- Modes
+- Be able to send a FEN command to setup the board
+
+## Modes
+ 
