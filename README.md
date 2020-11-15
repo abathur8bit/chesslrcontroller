@@ -35,7 +35,9 @@ To test connectivity:
     Hello
     pong
 
-When you first connect, the controller will send a *Hello*. Then the json command **{"action":"ping"}** is sent, and the **pong** response is sent back.
+When you first connect, the controller will send a *Hello*. Then the json command **{"action":"ping"}** is sent, and the **pong** response is sent back. 
+
+> Note: you might need to hit Ctrl-C to stop **nc**.
 
 To light up a square on the board
 
@@ -47,6 +49,15 @@ To light up a square on the board
     Action=move
 
 The squares at a2 and a3 should be lit. 
+
+## Detecting piece and down
+The controller is able to sense when a piece has been put down or lifted up and lets any one connected know. When chesslrcontroller running in a different terminal run **nc** again without the echo in front. When you see the **Hello** you can put a piece down on the A1 square, then lift it up. You should see the following appear:
+
+     $ nc -C localhost 9999
+     Hello
+     piece at A1 is now occupied
+     piece at A1 is now empty
+
  
  
 # Reference board
