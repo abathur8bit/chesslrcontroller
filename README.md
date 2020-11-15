@@ -5,17 +5,50 @@ I broke out the controller from ChessLR for two reasons. The main one was that t
 
 The other reason was to allow for being able to connect from a desktop computer, as it would be easier to annotate the moves using a desktop/laptop then it would be using the touch screen.
 
-# Status
+**Status:** In progress. Currently prototyping.
 
-Prototype. I can send the controller one or more moves via socket in json format.
+# Compiling and Running
+You need to have [ssobjects](https://github.com/abathur8bit/ssobjects) installed to compile chess controller, as it uses the network to allow remote connections.
 
-# Compiling and running
-Note that you may need to use sudo since the wiringPI lib needs access to the i2c hardware.
+## Compile chesslrcontroller
 
-    cmake -f CMakeLists.txt
-    make 
-    sudo ./chesslrcontroller
+    $ cmake -f CMakeLists.txt
+    $ make 
 
+## Running
+You might need to use **sudo** when running, since the wiringPI lib needs access to the i2c hardware.
+
+    $ sudo ./chesslrcontroller
+    binding to port 9999
+    construction
+    Turning off led's...
+    server running on port 9999
+
+The server is now running and listening for connections on port **9999**. 
+
+## Sending commands
+To send chesslrcontroller commands, you connect make a tcp/ip connection to port **9999**. You can do this using **telnet** or **nc**. The preferred way is **nc**, as you can also use it to send batch commands instead of typing commands out by hand.
+
+To test connectivity:
+
+    $ echo '{"action":"ping"}' | nc -C localhost 9999
+    Hello
+    pong
+
+When you first connect, the controller will send a *Hello*. Then the json command **{"action":"ping"}** is sent, and the **pong** response is sent back.
+
+To light up a square on the board
+
+    $ echo '{"action":"move","description":null,"moves":[{"from":"a2","to":"a3","type":"move"}]}' | nc -C localhost 9999
+    Hello
+    move 0 = A2A3 type=move index 48 40
+    row 8 col A
+    row 1 col H
+    Action=move
+
+The squares at a2 and a3 should be lit. 
+ 
+ 
 # Reference board
 
     *    a  b  c  d  e  f  g  h
@@ -36,7 +69,7 @@ Sample JSON
 Sample for a normal move:
 
     {"action":"move","description":null,"moves":[{"from":"e1","to":"g1","type":"move"}]}
-    {"action":"move","description":null,"moves":[{"from":"a1","to":"a2","type":"move"}]}
+    {"action":"move","description":null,"moves":[{"from":"a2","to":"a3","type":"move"}]}
 
 And another for castling short:
 
