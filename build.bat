@@ -1,8 +1,10 @@
-pscp -r src pi@chesslr:workspace/chesslrcontroller
-pscp README.md pi@chesslr:workspace/chesslrcontroller
-pscp CMakeLists.txt pi@chesslr:workspace/chesslrcontroller
+pscp -r -p src pi@millipede:workspace/chesslrcontroller
+pscp -p README.md pi@millipede:workspace/chesslrcontroller
+pscp -p CMakeLists.txt pi@millipede:workspace/chesslrcontroller
 
-plink -batch pi@chesslr "cd workspace/chesslrcontroller && cmake -f CMakeLists.txt && make"
+plink -batch pi@millipede "cd workspace/chesslrcontroller && cmake -f CMakeLists.txt && make"
+plink -batch pi@chesslr "kill `ps aux | grep chesslrcontroller | grep -v grep | awk -F' ' '{print $2}'`"
 
-rem pscp pi@millipede:workspace/chesslrcontroller/chesslrcontroller .
-rem pscp chesslrcontroller pi@chesslr:workspace/chesslrcontroller/chesslrcontroller
+pscp pi@millipede:workspace/chesslrcontroller/chesslrcontroller .
+pscp chesslrcontroller pi@chesslr:workspace/chesslrcontroller
+plink -batch pi@chesslr "chmod 755 workspace/chesslrcontroller"

@@ -62,6 +62,12 @@ public:
     }
 
     ChessMove() {}
+    ChessMove(const char* from,const char* to,const char* type,const char* description)
+            : m_from(from),m_to(to),m_type(type),m_description(description) {
+        m_from = str_toupper(from);
+        m_to = str_toupper(to);
+        m_type = str_toupper(type);
+    }
     ChessMove(json j) {
         m_from = str_toupper(j["from"]);
         m_to = str_toupper(j["to"]);
@@ -71,6 +77,15 @@ public:
     char* c_str() {
         snprintf(buff, sizeof(buff), "%s%s type=%s", m_from.c_str(), m_to.c_str(), m_type.c_str());
         return buff;
+    }
+
+    json tojson() {
+        json j;
+        j["from"] = m_from;
+        j["to"] = m_to;
+        j["descripton"] = m_description;
+        j["type"] = m_type;
+        return j;
     }
 };
 

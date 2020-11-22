@@ -73,15 +73,18 @@ using namespace nlohmann;   //trying this
 
 class ControllerServer : public TelnetServer {
 public:
+    enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY};
+    int gameMode;
     enum {FREQ=10};
     int devId;
     int index;
     int baseInput;
     int baseOutput;
-    int input[64];
-    int output[64];
-    int squareState[64];
-    int ledState[64];
+    int input[64];          ///< Pin map for input. You use in your digitalRead calls like **digitalRead(input[squareIndex])**.
+    int output[64];         ///< Pin map for output. You use in your digitalWrite calls digitalWrite(output[squareIndex],state);. 1=on, 0=off.
+    int squareState[64];    ///< What the board is currently seeing. When a piece is lifted or dropped, this gets updated.
+    int ledState[64];       ///< What the LEDs are displaying. If you change this, it will immediately change what is displayed.
+    int board[64];          ///< What the board should look like. If this and square state are different, then we are in the process of moving/capturing a piece.
     const char* rowNames="87654321";
     const char* colNames="ABCDEFGH";
     int mcp[8];
@@ -92,6 +95,7 @@ public:
         baseInput=250-64*2;
         baseOutput=baseInput+8;
         memset(squareState,0,sizeof(squareState));
+        gameMode = MODE_PLAY;
 
         wiringPiSetup();
 
@@ -119,8 +123,10 @@ public:
         printf("Turning off led's...\n");
         for(int i=0; i<64; i++) {
             digitalWrite(output[i],0);
+            ledState[i] = 0;
         }
         if(swap) {
+            // I messed up my wiring, so this fixes it
             int i=8*4+3;
             int t=input[i];
             input[i]=input[i+1];
@@ -128,11 +134,23 @@ public:
         }
         for(int i=0; i<64; i++) {
             squareState[i] = digitalRead(input[i]); //1=empty 0=occupied
-            ledState[i] = 0;
         }
-//        printf("Press any key\n");
-//        getchar();
+
+        int index=0;
+        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
+        index=63;
+        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
+
+        char square[3]="A1";
+        printf("index=%d %s\n",toIndex(square),square);
+        strcpy(square,"A8");
+        printf("index=%d %s\n",toIndex(square),square);
+        strcpy(square,"H1");
+        printf("index=%d %s\n",toIndex(square),square);
+        strcpy(square,"H8");
+        printf("index=%d %s\n",toIndex(square),square);
     }
+
     void processSingleMsg(PacketMessage* pmsg)
     {
         TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
@@ -162,24 +180,19 @@ public:
 
         try {
             json j = json::parse(pszString);
+            json jresult;
+            jresult["success"]=false;
+            jresult["code"]=nullptr;
+            jresult["message"]=nullptr;
             string action = j["action"];
             printf("parsed and have action = %s\n",action.c_str());
             if(!action.compare("move")) {
-                ChessAction *ca = parseJson(pszString);
-                printf("action %s num moves=%d\n", ca->action(), ca->numMoves());
-                for (int i = 0; i < ca->numMoves(); i++) {
-                    psocket->println("move %d = %s index %d %d", i, ca->move(i).c_str(), ca->move(i).fromIndex(), ca->move(i).toIndex());
-                    psocket->println("row %c col %c", ca->move(i).toRow(0), ca->move(i).toCol(0));
-                    psocket->println("row %c col %c", ca->move(i).toRow(63), ca->move(i).toCol(63));
-
-                    ledState[ca->move(i).fromIndex()] = 1;
-                    ledState[ca->move(i).toIndex()] = 1;
-                }
-
-                psocket->println("Action=%s", ca->action());
-                delete ca;
+                doMove(psocket,pszString);
             } else if(!action.compare("ping")) {
                 psocket->println("pong");
+            } else if(!action.compare("setmode")) {
+                setMode(j,jresult);
+                psocket->println(jresult.dump().c_str());
             } else {
                 psocket->println("invalid");
             }
@@ -187,33 +200,104 @@ public:
             psocket->println("json parse error: %s",e.what());
         }
     }
+
+    void setMode(json& j,json& jresult) {
+        jresult["success"] = true;     //assume okay
+        if(j.count("mode")==1) {
+            string mode = j["mode"];
+            if(!mode.compare("play")) {
+                gameMode = MODE_PLAY;
+            } else if(!mode.compare("setup")) {
+                gameMode = MODE_SETUP;
+            } else if(!mode.compare("inspect")) {
+                gameMode = MODE_INSPECT;
+            } else {
+                jresult["message"] = "invalid mode";
+                jresult["success"] = false;
+            }
+        } else {
+            jresult["message"] = "mode must be specified";
+            jresult["success"] = false;
+        }
+    }
+
+    void doMove(TelnetServerSocket* psocket,const char* pszString) {
+        ChessAction *ca = parseJson(pszString);
+        printf("action %s num moves=%d\n", ca->action(), ca->numMoves());
+        for (int i = 0; i < ca->numMoves(); i++) {
+            psocket->println("move %d = %s index %d %d", i, ca->move(i).c_str(), ca->move(i).fromIndex(), ca->move(i).toIndex());
+            psocket->println("row %c col %c", ca->move(i).toRow(0), ca->move(i).toCol(0));
+            psocket->println("row %c col %c", ca->move(i).toRow(63), ca->move(i).toCol(63));
+
+            ledState[ca->move(i).fromIndex()] = 1;
+            ledState[ca->move(i).toIndex()] = 1;
+        }
+
+        psocket->println("Action=%s", ca->action());
+        delete ca;
+    }
+
     void onConnection(PacketMessage* pmsg)
     {
         TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
         psocket->println("Hello");
     }
-    char toRow(int index) {
-        int y = index/8;
-        int x = index-y*8;
-        return rowNames[y];
-    }
+
+    /** Return the letter character of the column the index points to. The column should display before the row. */
     char toCol(int index) {
         int y = index/8;
         int x = index-y*8;
         return colNames[x];
     }
 
+    /** Returns the number character of the row the index points to. You should use the column, then row. */
+    char toRow(int index) {
+        int y = index/8;
+        int x = index-y*8;
+        return rowNames[y];
+    }
+
+    /** Convert a string like "A1" into an index like 56, or "A8" to 0. Top left corner is 0, bottom right is 63. */
+    int toIndex(const char* square) {
+        int col=toupper(square[0])-'A';
+        int row=8-(square[1]-'0');
+        printf("%s col=%d row=%d\n",square,col,row);
+        return row*8+col;
+    }
+
+    //called every FREQ milliseconds
     void idle(unsigned32 now) {
-        char buffer[80];
-        for(int i=0; i<64; i++) {
+        char buffer[1024];
+        switch(gameMode) {
+            case MODE_INSPECT: idleShowPieces(); break;
+            case MODE_PLAY: idlePlay(); break;
+        }
+    }
+
+    void idleShowPieces() {
+        for (int i = 0; i < 64; i++) {
+            led(i, isStateOccupied(digitalRead(input[i])));
+        }
+    }
+
+    void idlePlay() {
+        char buffer[1024];
+        for (int i = 0; i < 64; i++) {
             int state = digitalRead(input[i]);
-            if(state != squareState[i]) {
-                snprintf(buffer,sizeof(buffer),"piece at %c%c is now %s\n",toCol(i),toRow(i),(occupied(state)?"occupied":"empty"));
+            if (state != squareState[i]) {
+                snprintf(buffer, sizeof(buffer), "piece at %c%c is now %s\r\n", toCol(i), toRow(i), (isStateOccupied(state) ? "occupied" : "empty"));
                 printf(buffer);
                 send2All(buffer);
+                snprintf(buffer, sizeof(buffer), "%c%c", toCol(i), toRow(i));
+//                ChessMove move(buffer, "A1", "move", "normal");
+//                json j = move.tojson();
+//                snprintf(buffer, sizeof(buffer), "%s\r\n", j.dump().c_str());
+//                printf(buffer);
+//                send2All(buffer);
             }
             squareState[i] = state;
-            digitalWrite(output[i],ledState[i]);
+            ledState[i]=isStateOccupied(state);
+            digitalWrite(output[i], ledState[i]);
         }
         printf("");
     }
@@ -222,12 +306,14 @@ public:
     bool isSquareOccupied(int index) {
         return squareState[index]==1;   //0=occupied, 1=not
     }
+
     // Return true if the state given means the square is occupied, false otherwise
-    bool occupied(int state) {
+    bool isStateOccupied(int state) {
         return state==0;
     }
-    void led(int index,bool on) {
 
+    void led(int index,int on) {
+        digitalWrite(output[index],on?1:0);
     }
 };
 
@@ -415,7 +501,7 @@ int main(int argc,char* argv[]) {
             wPort = atoi(argv[++i]);
         }
     }
-    printf("binding to port %d\n",wPort);
+    printf("Binding to port %d\n",wPort);
     SockAddr saBind((ULONG)INADDR_ANY,wPort);
     printf("construction\n");
     ControllerServer server(saBind,swap);

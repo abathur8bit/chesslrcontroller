@@ -114,4 +114,14 @@ Multiline:
 - Be able to send a FEN command to setup the board
 
 ## Modes
- 
+### Setup
+Used to send FEN board positions. Will light up all the LEDs that are suppose to have pieces on them. If a piece is already there, the LED will turn off. If there is a piece where there should not be, the LED will flash quickly.
+
+{"action":"setmode","mode":"setup"}
+
+fen
+
+
+### Play
+Waits for a command to indicate a move, or to detect when a piece has been lifted. 
+
