@@ -70,11 +70,23 @@ using namespace std;
 using namespace nlohmann;   //trying this
 
 
+#define MOVE_UP 'U'
+#define MOVE_DOWN 'D'
+#define MOVE_NONE '_'
 
 class ControllerServer : public TelnetServer {
 public:
-    enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY};
+    enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE};
+
     int gameMode;
+    ChessMove waitMove;     ///< The move the board is waiting for the player to complete.
+    char moveType[4]= {'_','_','_','_'};
+    int moveSquareIndex[4]={-1,-1,-1,-1};
+    int moveIndex=-1;
+    int movesNeeded=0;
+    int moveFrom;
+    int moveTo;
+    bool moveCaptures;
     enum {FREQ=10};
     int devId;
     int index;
@@ -82,7 +94,7 @@ public:
     int baseOutput;
     int input[64];          ///< Pin map for input. You use in your digitalRead calls like **digitalRead(input[squareIndex])**.
     int output[64];         ///< Pin map for output. You use in your digitalWrite calls digitalWrite(output[squareIndex],state);. 1=on, 0=off.
-    int squareState[64];    ///< What the board is currently seeing. When a piece is lifted or dropped, this gets updated.
+    int squareState[64];    ///< What the board is currently seeing. When a piece is lifted or dropped, this gets updated. 0=empty, 1=occupied
     int ledState[64];       ///< What the LEDs are displaying. If you change this, it will immediately change what is displayed.
     int board[64];          ///< What the board should look like. If this and square state are different, then we are in the process of moving/capturing a piece.
     const char* rowNames="87654321";
@@ -121,10 +133,7 @@ public:
         }
 
         printf("Turning off led's...\n");
-        for(int i=0; i<64; i++) {
-            digitalWrite(output[i],0);
-            ledState[i] = 0;
-        }
+        clearLeds();
         if(swap) {
             // I messed up my wiring, so this fixes it
             int i=8*4+3;
@@ -133,22 +142,22 @@ public:
             input[i+1]=t;
         }
         for(int i=0; i<64; i++) {
-            squareState[i] = digitalRead(input[i]); //1=empty 0=occupied
+            squareState[i] = readState(i); //0=empty 1=occupied
         }
 
-        int index=0;
-        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
-        index=63;
-        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
-
-        char square[3]="A1";
-        printf("index=%d %s\n",toIndex(square),square);
-        strcpy(square,"A8");
-        printf("index=%d %s\n",toIndex(square),square);
-        strcpy(square,"H1");
-        printf("index=%d %s\n",toIndex(square),square);
-        strcpy(square,"H8");
-        printf("index=%d %s\n",toIndex(square),square);
+//        int index=0;
+//        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
+//        index=63;
+//        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
+//
+//        char square[3]="A1";
+//        printf("index=%d %s\n",toIndex(square),square);
+//        strcpy(square,"A8");
+//        printf("index=%d %s\n",toIndex(square),square);
+//        strcpy(square,"H1");
+//        printf("index=%d %s\n",toIndex(square),square);
+//        strcpy(square,"H8");
+//        printf("index=%d %s\n",toIndex(square),square);
     }
 
     void processSingleMsg(PacketMessage* pmsg)
@@ -158,9 +167,9 @@ public:
         switch(ppacket->getCmd())
         {
             //One way to handle the message. Process and reply within the switch.
-            case PacketBuffer::pcNewConnection:   onConnection(pmsg);   break;
-            case PacketBuffer::pcClosed:          printf("Connection closed.\n");          break;
-            case TelnetServerSocket::pcFullLine:  onFullLine(pmsg);        break;
+            case PacketBuffer::pcNewConnection:   onConnection(pmsg);               break;
+            case PacketBuffer::pcClosed:          printf("Connection closed.\n");   break;
+            case TelnetServerSocket::pcFullLine:  onFullLine(pmsg);                 break;
         }
         DELETE_NULL(ppacket);   //IMPORTANT! The packet is no longer needed. You must delete it.
     }
@@ -207,6 +216,7 @@ public:
             string mode = j["mode"];
             if(!mode.compare("play")) {
                 gameMode = MODE_PLAY;
+                clearLeds();
             } else if(!mode.compare("setup")) {
                 gameMode = MODE_SETUP;
             } else if(!mode.compare("inspect")) {
@@ -221,19 +231,43 @@ public:
         }
     }
 
+    void clearLeds() {
+        for(int i=0; i<64; i++) {
+            ledState[i] = 0;
+            led(i,0);
+        }
+    }
+
     void doMove(TelnetServerSocket* psocket,const char* pszString) {
         ChessAction *ca = parseJson(pszString);
-        printf("action %s num moves=%d\n", ca->action(), ca->numMoves());
-        for (int i = 0; i < ca->numMoves(); i++) {
-            psocket->println("move %d = %s index %d %d", i, ca->move(i).c_str(), ca->move(i).fromIndex(), ca->move(i).toIndex());
-            psocket->println("row %c col %c", ca->move(i).toRow(0), ca->move(i).toCol(0));
-            psocket->println("row %c col %c", ca->move(i).toRow(63), ca->move(i).toCol(63));
-
-            ledState[ca->move(i).fromIndex()] = 1;
-            ledState[ca->move(i).toIndex()] = 1;
+        int index=0;
+        waitMove.setFrom(ca->move(index).fromIndex());
+        waitMove.setTo(ca->move(index).toIndex());
+        waitMove.setType(ca->move(index).type());
+        ledState[ca->move(index).fromIndex()] = 1;
+        ledState[ca->move(index).toIndex()] = 1;
+        gameMode = MODE_MOVE;
+        moveIndex = 0;
+        if(!strcmp(ca->move(index).type(),"capture")) {
+            moveType[0] = MOVE_UP;
+            moveType[1] = MOVE_UP;
+            moveType[2] = MOVE_DOWN;
+            moveSquareIndex[0] = ca->move(index).fromIndex();
+            moveSquareIndex[1] = ca->move(index).toIndex();
+            moveSquareIndex[2] = ca->move(index).toIndex();
+            movesNeeded = 3;
+        } else {
+            moveType[0] = MOVE_UP;
+            moveType[1] = MOVE_DOWN;
+            moveSquareIndex[0] = ca->move(index).fromIndex();
+            moveSquareIndex[1] = ca->move(index).toIndex();
+            movesNeeded = 2;
         }
 
-        psocket->println("Action=%s", ca->action());
+        for(int i=0; i<4; i++) {
+            printf("type[%d]=%c square index=%d\n",i,moveType[i],moveSquareIndex[i]);
+        }
+
         delete ca;
     }
 
@@ -271,35 +305,65 @@ public:
         switch(gameMode) {
             case MODE_INSPECT: idleShowPieces(); break;
             case MODE_PLAY: idlePlay(); break;
+            case MODE_MOVE: idleMove(); break;
         }
     }
 
     void idleShowPieces() {
         for (int i = 0; i < 64; i++) {
-            led(i, isStateOccupied(digitalRead(input[i])));
+            led(i, readState(i));
         }
     }
+
 
     void idlePlay() {
         char buffer[1024];
         for (int i = 0; i < 64; i++) {
-            int state = digitalRead(input[i]);
+            int state = readState(i);
             if (state != squareState[i]) {
-                snprintf(buffer, sizeof(buffer), "piece at %c%c is now %s\r\n", toCol(i), toRow(i), (isStateOccupied(state) ? "occupied" : "empty"));
-                printf(buffer);
-                send2All(buffer);
                 snprintf(buffer, sizeof(buffer), "%c%c", toCol(i), toRow(i));
-//                ChessMove move(buffer, "A1", "move", "normal");
-//                json j = move.tojson();
-//                snprintf(buffer, sizeof(buffer), "%s\r\n", j.dump().c_str());
-//                printf(buffer);
-//                send2All(buffer);
+                json j;
+                j["action"] = state ? "pieceDown" : "pieceUp";
+                j["square"] = buffer;
+                printf("%s\n",j.dump().c_str());
+                send2All(j.dump().c_str());
+                send2All("\r\n");
             }
             squareState[i] = state;
-            ledState[i]=isStateOccupied(state);
-            digitalWrite(output[i], ledState[i]);
         }
-        printf("");
+    }
+
+    void idleMove() {
+        for (int i = 0; i < 64 && gameMode==MODE_MOVE; i++) {
+            int state = readState(i);
+            if (state != squareState[i]) {
+                char type = state ? MOVE_DOWN:MOVE_UP;
+                if(moveType[moveIndex] == type && moveSquareIndex[moveIndex] == i) {
+                    printf("got move %d %c\n",moveIndex,moveType[moveIndex]);
+                    bool resetLed = (moveIndex==1 && type==MOVE_UP) ? false:true;
+                    if(resetLed)
+                        ledState[i] = 0;
+                    moveIndex++;
+                    if(moveIndex == movesNeeded) {
+                        gameMode = MODE_PLAY;
+                        printf("Move finished %s\n",waitMove.tojson().dump().c_str());
+                        send2All(waitMove.tojson().dump().c_str());
+                        send2All("\r\n");
+                    }
+                }
+            }
+            squareState[i] = state;
+            led(i,ledState[i]);
+        }
+    }
+
+    /**
+     * Checks if a piece is detected on the given square.
+     * @param index Square to check.
+     * @return 0 if empty, 1 if a piece is detected.
+     */
+    int readState(int index) {
+        return digitalRead(input[index])==0 ? 1:0;
     }
 
     // Return true if the square is occupied, false otherwise.
@@ -314,6 +378,7 @@ public:
 
     void led(int index,int on) {
         digitalWrite(output[index],on?1:0);
+        ledState[index] = on;
     }
 };
 

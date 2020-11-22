@@ -43,15 +43,34 @@ public:
         return (8*('8'-square[1]))+(square[0]-'A');
     }
 
-    char toRow(int index) {
-        int y = index/8;
-        int x = index-y*8;
-        return rowNames[y];
+    void setFrom(int index) {
+        snprintf(buff, sizeof(buff),"%c%c",toCol(index),toRow(index));
+        m_from = buff;
     }
+
+    void setTo(int index) {
+        snprintf(buff, sizeof(buff),"%c%c",toCol(index),toRow(index));
+        m_to = buff;
+    }
+
+    const char* type() {
+        return m_type.c_str();
+    }
+    void setType(const char* t) {
+        m_type = t;
+    }
+
+    /** Converts the index (0= top left, 63=bottom right) to a square column like "A". Column before row. */
     char toCol(int index) {
         int y = index/8;
         int x = index-y*8;
         return colNames[x];
+    }
+
+    char toRow(int index) {
+        int y = index/8;
+        int x = index-y*8;
+        return rowNames[y];
     }
 
     string str_toupper(string s) {
@@ -61,7 +80,7 @@ public:
         return s;
     }
 
-    ChessMove() {}
+    ChessMove() : m_from(),m_to(),m_type(),m_description() {}
     ChessMove(const char* from,const char* to,const char* type,const char* description)
             : m_from(from),m_to(to),m_type(type),m_description(description) {
         m_from = str_toupper(from);
