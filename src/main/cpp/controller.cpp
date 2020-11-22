@@ -310,8 +310,16 @@ public:
     }
 
     void idleShowPieces() {
+        char buffer[1024];
         for (int i = 0; i < 64; i++) {
-            led(i, readState(i));
+            int state = readState(i);
+            if (state != squareState[i]) {
+                snprintf(buffer, sizeof(buffer), "%c%c %s\r\n", toCol(i), toRow(i), (state ? "pieceDown" : "pieceUp"));
+                printf(buffer);
+                send2All(buffer);
+            }
+            squareState[i] = state;
+            led(i, state);
         }
     }
 
