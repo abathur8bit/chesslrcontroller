@@ -200,14 +200,25 @@ public:
             } else if(!action.compare("ping")) {
                 psocket->println("pong");
             } else if(!action.compare("setmode")) {
-                setMode(j,jresult);
-                psocket->println(jresult.dump().c_str());
-            } else {
-                psocket->println("invalid");
+                setMode(j, jresult);
+            } else if(!action.compare("led")) {
+                setLed(j,jresult);
             }
+            psocket->println(jresult.dump().c_str());
+
         } catch(json::parse_error& e) {
             psocket->println("json parse error: %s",e.what());
         }
+    }
+
+    /** Turn on the specified LED. Example:
+     * echo '{"action":"led","square":"a2"}' | nc -C -N localhost 9999 */
+    void setLed(json& j,json& jresult) {
+        jresult["success"] = true;
+        string square = j["square"];
+        int index = toIndex(square.c_str());
+        printf("square=%s index=%d\n",square.c_str(),index);
+        led(index,!ledState[index]);
     }
 
     void setMode(json& j,json& jresult) {
@@ -216,11 +227,16 @@ public:
             string mode = j["mode"];
             if(!mode.compare("play")) {
                 gameMode = MODE_PLAY;
+                jresult["message"] = "game mode set to MODE_PLAY";
                 clearLeds();
             } else if(!mode.compare("setup")) {
                 gameMode = MODE_SETUP;
+                jresult["message"] = "game mode set to MODE_SETUP";
+                clearLeds();
             } else if(!mode.compare("inspect")) {
                 gameMode = MODE_INSPECT;
+                jresult["message"] = "game mode set to MODE_INSPECT";
+                clearLeds();
             } else {
                 jresult["message"] = "invalid mode";
                 jresult["success"] = false;
@@ -358,6 +374,15 @@ public:
                         send2All(waitMove.tojson().dump().c_str());
                         send2All("\r\n");
                     }
+                } else {
+                    char buffer[1024];
+                    snprintf(buffer, sizeof(buffer), "%c%c", toCol(i), toRow(i));
+                    json j;
+                    j["action"] = state ? "pieceDown" : "pieceUp";
+                    j["square"] = buffer;
+                    printf("%s\n",j.dump().c_str());
+                    send2All(j.dump().c_str());
+                    send2All("\r\n");
                 }
             }
             squareState[i] = state;

@@ -41,7 +41,7 @@ When you first connect, the controller will send a *Hello*. Then the json comman
 
 To light up a square on the board
 
-    $ echo '{"action":"move","description":null,"moves":[{"from":"a2","to":"a3","type":"move"}]}' | nc -C -N localhost 9999
+    $ echo '{"action":"move","description":null,"moves":[{"from":"a1","to":"a2","type":"move"}]}' | nc -C -N localhost 9999
     Hello
     move 0 = A2A3 type=move index 48 40
     row 8 col A
@@ -49,6 +49,10 @@ To light up a square on the board
     Action=move
 
 The squares at a2 and a3 should be lit. 
+
+Capture
+
+    $ echo '{"action":"move","description":null,"moves":[{"from":"a1","to":"a2","type":"capture"}]}' | nc -C -N localhost 9999
 
 ## Detecting piece and down
 The controller is able to sense when a piece has been put down or lifted up and lets any one connected know. When chesslrcontroller running in a different terminal run **nc** again without the echo in front. When you see the **Hello** you can put a piece down on the A1 square, then lift it up. You should see the following appear:
