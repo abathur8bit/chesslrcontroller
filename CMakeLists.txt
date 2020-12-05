@@ -2,8 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(chesslrcontroller)
 
 set(CMAKE_CXX_STANDARD 14)
-
-SET(CURSES_USE_NCURSES TRUE)
+set(CMAKE_BUILD_TYPE Debug)
 
 #set(CMAKE_C_STANDARD 99)
 

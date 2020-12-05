@@ -232,6 +232,7 @@ public:
     }
 
     void setPosition(const char* fen) {
+        clearLeds();
         cr.Forsyth(fen);
         for(int i=0; i<64; i++) {
             squareState[i] = (cr.pieceAt(i)==' ' ? 0:1);
@@ -454,8 +455,14 @@ public:
             printf("%s\n",j.dump().c_str());
             send2All(j.dump().c_str());
             send2All("\r\n");
+            int castle=mv.NaturalOut(&cr).compare("O-O");
             cr.PlayMove(mv);
             display_position(cr);
+            if(!castle) {
+                //player castled, tell player to move rook
+                std::string fen = cr.ForsythPublish();
+                setPosition(fen.c_str());
+            }
         }
         moveIndex=-1;
         clearLeds();
@@ -531,6 +538,7 @@ public:
                     } else {
                         //piece down
                         finishMove(i);
+                        return; //stop processing squares
                     }
                 }
             }
