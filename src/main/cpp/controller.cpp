@@ -84,7 +84,7 @@ class ControllerServer : public TelnetServer {
 public:
     enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE};
 
-    BoardRules rules;
+    BoardRules cr;
     int gameMode;
     ChessMove waitMove;     ///< The move the board is waiting for the player to complete.
     char moveType[4]= {'_','_','_','_'};
@@ -105,7 +105,7 @@ public:
     int ledState[64];       ///< What the LEDs are displaying. If you change this, it will immediately change what is displayed.
     int board[64];          ///< What the board should look like. If this and square state are different, then we are in the process of moving/capturing a piece.
     const char* rowNames="87654321";
-    const char* colNames="ABCDEFGH";
+    const char* colNames="abcdefgh";
     int mcp[8];
 
     ControllerServer(SockAddr& saBind,bool swap) : TelnetServer(saBind,FREQ){
@@ -152,14 +152,18 @@ public:
             squareState[i] = readState(i); //0=empty 1=occupied
         }
 
-        std::string s = rules.ToDebugStr();
-        printf("Position=%s\n",s.c_str());
-//        for(int i=0; i<64; i++) {
-//            if(rules.pieceAt(i) == ' ')
-//                led(i,0);
-//            else
-//                led(i,1);
-//        }
+        const char* fen = "8/8/8/8/8/8/8/K6k w - - 0 1";
+        cr.Forsyth(fen);
+        display_position(cr);
+        for(int i=0; i<64; i++) {
+            if(cr.pieceAt(i) == ' ')
+                led(i,0);
+            else
+                led(i,1);
+        }
+        printf("setup board");
+        getchar();
+        clearLeds();
 
 
 //        int index=0;
@@ -310,6 +314,15 @@ public:
         psocket->println("Hello");
     }
 
+    char* toMove(char* buffer, size_t n, char col, char row) {
+        snprintf(buffer, n, "%c%c", col, row);
+        return buffer;
+    }
+    char* toMove(char* buffer,size_t n,int index) {
+        snprintf(buffer,n,"%c%c",toCol(index),toRow(index));
+        return buffer;
+    }
+
     /** Return the letter character of the column the index points to. The column should display before the row. */
     char toCol(int index) {
         int y = index/8;
@@ -326,10 +339,16 @@ public:
 
     /** Convert a string like "A1" into an index like 56, or "A8" to 0. Top left corner is 0, bottom right is 63. */
     int toIndex(const char* square) {
-        int col=toupper(square[0])-'A';
+        int col=tolower(square[0])-'a';
         int row=8-(square[1]-'0');
-        printf("%s col=%d row=%d\n",square,col,row);
+//        printf("%s col=%d row=%d\n",square,col,row);
         return row*8+col;
+    }
+
+    int toIndex(char col,char row) {
+        char buffer[5];
+        toMove(buffer,sizeof(buffer),col,row);
+        return toIndex(buffer);
     }
 
     //called every FREQ milliseconds
@@ -356,6 +375,60 @@ public:
         }
     }
 
+    void showValidSquares(int fromIndex) {
+        char bufFrom[5],bufTo[5];
+        snprintf(bufFrom, sizeof(bufFrom), "%c%c", toCol(fromIndex), toRow(fromIndex));
+//        printf("Move from %s\n",bufFrom);
+
+        std::vector<thc::Move> moves;
+        std::vector<bool> check;
+        std::vector<bool> mate;
+        std::vector<bool> stalemate;
+        cr.GenLegalMoveList(moves, check, mate, stalemate);
+        unsigned int len = moves.size();
+        clearLeds();
+        led(fromIndex,1);
+        for(int i=0; i<len; i++) {
+            thc::Move mv = moves[i];
+            std::string mv_txt = mv.TerseOut();
+//            printf("checking move %s > %s\n",mv_txt.c_str(),bufFrom);
+            if(mv_txt[0] == bufFrom[0] && mv_txt[1] == bufFrom[1]) {
+                int to=toIndex(mv_txt[2],mv_txt[3]);
+                led(to,1);
+            }
+        }
+    }
+
+    /** To long algebraic notation like "a2a3". */
+    char* toLAN(char* dest,size_t n,int from,int to) {
+        char bfrom[5];
+        char bto[5];
+        char bmove[5];
+        toMove(bfrom,sizeof(bfrom),from);
+        toMove(bto,sizeof(bto),to);
+        snprintf(dest,n,"%s%s",bfrom,bto);
+        return dest;
+    }
+
+    void display_position(thc::ChessRules& cr)
+    {
+        std::string fen = cr.ForsythPublish();
+        std::string s = cr.ToDebugStr();
+        printf("FEN = %s\n", fen.c_str());
+        printf("Position = %s\n", s.c_str());
+    }
+
+    void finishMove(int toIndex) {
+        char buffer[80];
+        toLAN(buffer,sizeof(buffer),moveSquareIndex[0],toIndex);
+        printf("full move is %s\n",buffer);
+        thc::Move mv;
+        mv.TerseIn(&cr,buffer);
+        cr.PlayMove(mv);
+        display_position(cr);
+        moveIndex=-1;
+        clearLeds();
+    }
 
     void idlePlay() {
         char buffer[1024];
@@ -369,6 +442,16 @@ public:
                 printf("%s\n",j.dump().c_str());
                 send2All(j.dump().c_str());
                 send2All("\r\n");
+
+                if(!state && -1==moveIndex) {
+                    moveType[0] = MOVE_UP;
+                    moveSquareIndex[0] = i;
+                    moveIndex=1;
+                    showValidSquares(i);
+                } else {
+                    //piece down
+                    finishMove(i);
+                }
             }
             squareState[i] = state;
         }
