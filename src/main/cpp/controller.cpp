@@ -87,6 +87,7 @@ public:
 
     BoardRules cr;
     int gameMode;
+    int flashState=0;
     ChessMove waitMove;     ///< The move the board is waiting for the player to complete.
     char moveType[4]= {'_','_','_','_'};
     int moveSquareIndex[4]={-1,-1,-1,-1};
@@ -104,6 +105,7 @@ public:
     int output[64];         ///< Pin map for output. You use in your digitalWrite calls digitalWrite(output[squareIndex],state);. 1=on, 0=off.
     int squareState[64];    ///< What the board is currently seeing. When a piece is lifted or dropped, this gets updated. 0=empty, 1=occupied
     int ledState[64];       ///< What the LEDs are displaying. If you change this, it will immediately change what is displayed.
+    int ledFlash[64];       ///< If set, an LED should be flashing.
     int board[64];          ///< What the board should look like. If this and square state are different, then we are in the process of moving/capturing a piece.
     const char* rowNames="87654321";
     const char* colNames="abcdefgh";
@@ -221,7 +223,7 @@ public:
         string square = j["square"];
         int index = toIndex(square.c_str());
         printf("square=%s index=%d\n",square.c_str(),index);
-        led(index,!ledState[index]);
+        led(index,ledState[index]?0:1); //flip from on to off and off to on
     }
 
     void setPosition(const char* fen) {
@@ -354,7 +356,19 @@ public:
             case MODE_INSPECT: idleShowPieces(); break;
             case MODE_PLAY: idlePlay(); break;
             case MODE_MOVE: idleMove(); break;
-            case MODE_SETPOSITION: idleSetPos(); break;
+            case MODE_SETPOSITION:
+                idleSetPosition(); break;
+        }
+        flasher();
+    }
+
+    void flasher() {
+        flashState = !flashState;
+        for(int i=0; i<64; i++) {
+            int on=ledState[i]&1;
+            if(ledState[i]&2)
+                on=flashState;
+            digitalWrite(output[i],on?1:0);
         }
     }
 
@@ -456,9 +470,9 @@ public:
                             printf("You can't move that piece\n");
                             while(!readState(i)) {
                                 sleep(1);
-                                led(i,0);
+                                digitalWrite(output[i],1);
                                 sleep(1);
-                                led(i,1);
+                                digitalWrite(output[i],0);
                             }
                             led(i,0);
                             state = readState(i);
@@ -482,7 +496,7 @@ public:
                     printf("got move %d %c\n",moveIndex,moveType[moveIndex]);
                     bool resetLed = (moveIndex==1 && type==MOVE_UP) ? false:true;
                     if(resetLed)
-                        ledState[i] = 0;
+                        led(i,0);
                     moveIndex++;
                     if(moveIndex == movesNeeded) {
                         gameMode = MODE_PLAY;
@@ -502,28 +516,32 @@ public:
                 }
             }
             squareState[i] = state;
-            led(i,ledState[i]);
         }
     }
 
     /** Any squares that need a piece, will be solid. Any square that has a piece that should not
      * will flash.
      */
-    void idleSetPos() {
+    void idleSetPosition() {
         //setup what it should look like
         bool complete=true;
         for (int i = 0; i < 64; i++) {
             int state = readState(i);
-            int ledOn = (squareState[i] && state != squareState[i]);
-            if(ledOn)
+            if(squareState[i] != state) {
                 complete=false;
-            led(i,ledOn);
+                if(state && !squareState[i])
+                    led(i,3);   //flash
+                else if(!state && squareState[i])
+                    led(i,1);   //just turn it on
+            } else {
+                led(i,0);
+            }
         }
         if(complete) {
             clearLeds();
             gameMode = MODE_PLAY;
             json j;
-            j["action"] = "setposition_complete";
+            j["action"] = "setposition";
             j["status"] = "complete";
             printf("%s\n",j.dump().c_str());
             send2All(j.dump().c_str());
@@ -561,9 +579,8 @@ public:
         return state==0;
     }
 
-    void led(int index,int on) {
-        digitalWrite(output[index],on?1:0);
-        ledState[index] = on;
+    void led(int index,int state) {
+        ledState[index] = state;
     }
 };
 
@@ -737,8 +754,6 @@ void allrows(bool swap) {
         }
         delay(10);
     }
-
-
 }
 
 int main(int argc,char* argv[]) {
