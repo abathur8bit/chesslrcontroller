@@ -75,6 +75,10 @@ using namespace nlohmann;   //trying this
 #define MOVE_DOWN 'D'
 #define MOVE_NONE '_'
 
+#define LED_OFF 0
+#define LED_ON 1
+#define LED_FLASH 3
+
 class BoardRules : public thc::ChessRules {
 public:
     char pieceAt(int i) {
@@ -223,7 +227,7 @@ public:
         string square = j["square"];
         int index = toIndex(square.c_str());
         printf("square=%s index=%d\n",square.c_str(),index);
-        led(index,ledState[index]?0:1); //flip from on to off and off to on
+        led(index,ledState[index]?LED_OFF:LED_ON); //flip from on to off and off to on
     }
 
     void setPosition(const char* fen) {
@@ -269,7 +273,7 @@ public:
     void clearLeds() {
         for(int i=0; i<64; i++) {
             ledState[i] = 0;
-            led(i,0);
+            led(i,LED_OFF);
         }
     }
 
@@ -362,6 +366,7 @@ public:
         flasher();
     }
 
+    //Using ledState array, turns LEDs on, and flashes them if the flash bit is set
     void flasher() {
         flashState = !flashState;
         for(int i=0; i<64; i++) {
@@ -382,7 +387,7 @@ public:
                 send2All(buffer);
             }
             squareState[i] = state;
-            led(i, state);
+            led(i, state?LED_ON:LED_OFF);
         }
     }
 
@@ -399,7 +404,7 @@ public:
         unsigned int len = moves.size();
         int validMoves=0;
         clearLeds();
-        led(fromIndex,1);
+        led(fromIndex,LED_ON);
         for(int i=0; i<len; i++) {
             thc::Move mv = moves[i];
             std::string mv_txt = mv.TerseOut();
@@ -474,7 +479,7 @@ public:
                                 sleep(1);
                                 digitalWrite(output[i],0);
                             }
-                            led(i,0);
+                            led(i,LED_OFF);
                             state = readState(i);
                         }
                     } else {
@@ -496,7 +501,7 @@ public:
                     printf("got move %d %c\n",moveIndex,moveType[moveIndex]);
                     bool resetLed = (moveIndex==1 && type==MOVE_UP) ? false:true;
                     if(resetLed)
-                        led(i,0);
+                        led(i,LED_OFF);
                     moveIndex++;
                     if(moveIndex == movesNeeded) {
                         gameMode = MODE_PLAY;
@@ -530,11 +535,11 @@ public:
             if(squareState[i] != state) {
                 complete=false;
                 if(state && !squareState[i])
-                    led(i,3);   //flash
+                    led(i,LED_FLASH);   //flash
                 else if(!state && squareState[i])
-                    led(i,1);   //just turn it on
+                    led(i,LED_ON);   //just turn it on
             } else {
-                led(i,0);
+                led(i,LED_OFF);
             }
         }
         if(complete) {
