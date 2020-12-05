@@ -54,7 +54,7 @@
 #include <ssobjects/telnetserversocket.h>
 
 #include "json.hpp"
-
+#include "thc.h"
 #include "chessmove.hpp"
 #include "chessaction.hpp"
 
@@ -74,10 +74,17 @@ using namespace nlohmann;   //trying this
 #define MOVE_DOWN 'D'
 #define MOVE_NONE '_'
 
+class BoardRules : public thc::ChessRules {
+public:
+    char pieceAt(int i) {
+        return squares[i];
+    }
+};
 class ControllerServer : public TelnetServer {
 public:
     enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE};
 
+    BoardRules rules;
     int gameMode;
     ChessMove waitMove;     ///< The move the board is waiting for the player to complete.
     char moveType[4]= {'_','_','_','_'};
@@ -144,6 +151,16 @@ public:
         for(int i=0; i<64; i++) {
             squareState[i] = readState(i); //0=empty 1=occupied
         }
+
+        std::string s = rules.ToDebugStr();
+        printf("Position=%s\n",s.c_str());
+//        for(int i=0; i<64; i++) {
+//            if(rules.pieceAt(i) == ' ')
+//                led(i,0);
+//            else
+//                led(i,1);
+//        }
+
 
 //        int index=0;
 //        printf("index %d is %c%c\n",index,toCol(index),toRow(index));

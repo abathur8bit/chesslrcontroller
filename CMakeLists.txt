@@ -13,7 +13,7 @@ set(CMAKE_CXX_FLAGS "-std=c++11")
 include_directories(/usr/local/include)
 link_directories(/usr/local/lib)
 
-add_executable(chesslrcontroller src/main/cpp/controller.cpp)
+add_executable(chesslrcontroller src/main/cpp/controller.cpp src/main/cpp/thc.cpp)
 #add_executable(actiontest src/main/cpp/actiontest.cpp )
 #add_executable(boardtest src/main/cpp/boardtest.cpp)
 #add_executable(test src/main/cpp/test.cpp)
