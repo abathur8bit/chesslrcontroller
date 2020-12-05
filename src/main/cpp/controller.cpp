@@ -155,15 +155,18 @@ public:
         const char* fen = "8/8/8/8/8/8/8/K6k w - - 0 1";
         cr.Forsyth(fen);
         display_position(cr);
-        for(int i=0; i<64; i++) {
-            if(cr.pieceAt(i) == ' ')
-                led(i,0);
-            else
-                led(i,1);
+        if(!squareState[toIndex("a1")] || !squareState[toIndex("h1")]) {
+            for(int i=0; i<64; i++) {
+                if(cr.pieceAt(i) == ' ')
+                    led(i,0);
+                else
+                    led(i,1);
+            }
+            printf("Setup your board as shown, white king on left, black king on right\n");
+            printf("Press ENTER when done\n");
+            getchar();
+            clearLeds();
         }
-        printf("setup board");
-        getchar();
-        clearLeds();
 
 
 //        int index=0;
@@ -419,13 +422,15 @@ public:
     }
 
     void finishMove(int toIndex) {
-        char buffer[80];
-        toLAN(buffer,sizeof(buffer),moveSquareIndex[0],toIndex);
-        printf("full move is %s\n",buffer);
-        thc::Move mv;
-        mv.TerseIn(&cr,buffer);
-        cr.PlayMove(mv);
-        display_position(cr);
+        if(toIndex != moveSquareIndex[0]) {
+            char buffer[80];
+            toLAN(buffer, sizeof(buffer), moveSquareIndex[0], toIndex);
+            printf("full move is %s\n", buffer);
+            thc::Move mv;
+            mv.TerseIn(&cr, buffer);
+            cr.PlayMove(mv);
+            display_position(cr);
+        }
         moveIndex=-1;
         clearLeds();
     }
@@ -443,14 +448,16 @@ public:
                 send2All(j.dump().c_str());
                 send2All("\r\n");
 
-                if(!state && -1==moveIndex) {
-                    moveType[0] = MOVE_UP;
-                    moveSquareIndex[0] = i;
-                    moveIndex=1;
-                    showValidSquares(i);
-                } else {
-                    //piece down
-                    finishMove(i);
+                if(false) {
+                    if (!state && -1 == moveIndex) {
+                        moveType[0] = MOVE_UP;
+                        moveSquareIndex[0] = i;
+                        moveIndex = 1;
+                        showValidSquares(i);
+                    } else {
+                        //piece down
+                        finishMove(i);
+                    }
                 }
             }
             squareState[i] = state;
