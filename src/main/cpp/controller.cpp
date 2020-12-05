@@ -39,6 +39,7 @@
  *  70: -- -- -- -- -- -- -- --
  */
 
+#include <unistd.h>
 #include <wiringPi.h>
 #include <wiringPiI2C.h>
 #include <mcp23017.h>
@@ -152,10 +153,10 @@ public:
             squareState[i] = readState(i); //0=empty 1=occupied
         }
 
-        const char* fen = "8/8/8/8/8/8/8/K6k w - - 0 1";
+        const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";
         cr.Forsyth(fen);
         display_position(cr);
-        if(!squareState[toIndex("a1")] || !squareState[toIndex("h1")]) {
+        if(!squareState[toIndex("a3")] || !squareState[toIndex("h3")]) {
             for(int i=0; i<64; i++) {
                 if(cr.pieceAt(i) == ' ')
                     led(i,0);
@@ -167,6 +168,10 @@ public:
             getchar();
             clearLeds();
         }
+        for(int i=0; i<64; i++) {
+            squareState[i] = readState(i); //0=empty 1=occupied
+        }
+        printf("Go ahead and move the white king\n");
 
 
 //        int index=0;
@@ -378,7 +383,7 @@ public:
         }
     }
 
-    void showValidSquares(int fromIndex) {
+    bool showValidSquares(int fromIndex) {
         char bufFrom[5],bufTo[5];
         snprintf(bufFrom, sizeof(bufFrom), "%c%c", toCol(fromIndex), toRow(fromIndex));
 //        printf("Move from %s\n",bufFrom);
@@ -389,6 +394,7 @@ public:
         std::vector<bool> stalemate;
         cr.GenLegalMoveList(moves, check, mate, stalemate);
         unsigned int len = moves.size();
+        int validMoves=0;
         clearLeds();
         led(fromIndex,1);
         for(int i=0; i<len; i++) {
@@ -398,8 +404,11 @@ public:
             if(mv_txt[0] == bufFrom[0] && mv_txt[1] == bufFrom[1]) {
                 int to=toIndex(mv_txt[2],mv_txt[3]);
                 led(to,1);
+                validMoves++;
             }
         }
+        printf("number of valid moves %d\n",len);
+        return validMoves>0;
     }
 
     /** To long algebraic notation like "a2a3". */
@@ -448,12 +457,23 @@ public:
                 send2All(j.dump().c_str());
                 send2All("\r\n");
 
-                if(false) {
+                if(true) {
                     if (!state && -1 == moveIndex) {
-                        moveType[0] = MOVE_UP;
-                        moveSquareIndex[0] = i;
-                        moveIndex = 1;
-                        showValidSquares(i);
+                        if(showValidSquares(i)) {
+                            moveType[0] = MOVE_UP;
+                            moveSquareIndex[0] = i;
+                            moveIndex = 1;
+                        } else {
+                            printf("You can't move that piece\n");
+                            while(!readState(i)) {
+                                sleep(1);
+                                led(i,0);
+                                sleep(1);
+                                led(i,1);
+                            }
+                            led(i,0);
+                            state = readState(i);
+                        }
                     } else {
                         //piece down
                         finishMove(i);
