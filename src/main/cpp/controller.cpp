@@ -160,7 +160,8 @@ public:
         }
 
         //const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";    //two kings
-        const char* fen = "8/8/8/8/4q3/1K2k3/8/8 w - - 0 1";
+//        const char* fen = "8/8/8/8/4q3/1K2k3/8/8 w - - 0 1";  //a few pieces for testing
+        const char* fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; //new game. you can also just not set the fen on a new board instance
         setPosition(fen);
         display_position(cr);
         if(!isBoardSetup()) {
@@ -417,7 +418,7 @@ public:
                 validMoves++;
             }
         }
-        printf("number of valid moves %d\n",len);
+//        printf("number of valid moves %d\n",len);
         return validMoves>0;
     }
 
@@ -455,10 +456,10 @@ public:
             printf("%s\n",j.dump().c_str());
             send2All(j.dump().c_str());
             send2All("\r\n");
-            int castle=mv.NaturalOut(&cr).compare("O-O");
+            int castle=mv.NaturalOut(&cr).compare("O-O")==0 || mv.NaturalOut(&cr).compare("O-O-O")==0;
             cr.PlayMove(mv);
             display_position(cr);
-            if(!castle) {
+            if(castle) {
                 //player castled, tell player to move rook
                 std::string fen = cr.ForsythPublish();
                 setPosition(fen.c_str());
@@ -466,7 +467,9 @@ public:
         }
         moveIndex=-1;
         clearLeds();
-
+        for(int i=0; i<64; i++) {
+            squareState[i] = (cr.pieceAt(i)==' ' ? 0:1);
+        }
         thc::TERMINAL terminal;
         cr.Evaluate(terminal);
         switch(terminal) {
