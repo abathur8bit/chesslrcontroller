@@ -87,7 +87,7 @@ public:
 };
 class ControllerServer : public TelnetServer {
 public:
-    enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE,MODE_SETPOSITION};
+    enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE,MODE_SETPOSITION,MODE_MATE};
 
     BoardRules cr;
     int gameMode;
@@ -159,7 +159,8 @@ public:
             squareState[i] = readState(i); //0=empty 1=occupied
         }
 
-        const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";
+        //const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";    //two kings
+        const char* fen = "8/8/8/8/4q3/1K2k3/8/8 w - - 0 1";
         setPosition(fen);
         display_position(cr);
         if(!isBoardSetup()) {
@@ -442,14 +443,54 @@ public:
         if(toIndex != moveSquareIndex[0]) {
             char buffer[80];
             toLAN(buffer, sizeof(buffer), moveSquareIndex[0], toIndex);
-            printf("full move is %s\n", buffer);
             thc::Move mv;
             mv.TerseIn(&cr, buffer);
+
+//            printf("full move is %s - %s\n", buffer,mv.NaturalOut(&cr).c_str());
+            json j;
+            j["action"] = "move";
+            j["long"] = mv.TerseOut().c_str();
+            j["san"] = mv.NaturalOut(&cr).c_str();
+            printf("%s\n",j.dump().c_str());
+            send2All(j.dump().c_str());
+            send2All("\r\n");
             cr.PlayMove(mv);
             display_position(cr);
         }
         moveIndex=-1;
         clearLeds();
+
+        thc::TERMINAL terminal;
+        cr.Evaluate(terminal);
+        switch(terminal) {
+            case thc::TERMINAL::TERMINAL_BCHECKMATE: printf("black checkmate\n"); break;
+            case thc::TERMINAL::TERMINAL_WCHECKMATE: printf("white checkmate\n"); break;
+        }
+        if(terminal==thc::TERMINAL::TERMINAL_BCHECKMATE || terminal==thc::TERMINAL::TERMINAL_WCHECKMATE) {
+            gameMode=MODE_MATE;
+            for(int i=0; i<64; i++) {
+                if(cr.pieceAt(i) == 'k' && terminal==thc::TERMINAL::TERMINAL_BCHECKMATE)
+                    led(i,LED_FLASH);
+                else if(cr.pieceAt(i) == 'K' && terminal==thc::TERMINAL::TERMINAL_WCHECKMATE)
+                    led(i,LED_FLASH);
+            }
+        }
+
+//        thc::DRAWTYPE drawType;
+//        cr.IsDraw(cr.WhiteToPlay(),drawType);
+//        switch(drawType) {
+//            case thc::DRAWTYPE::DRAWTYPE_50MOVE: printf("DRAWTYPE_50MOVE\n"); break;
+//            case thc::DRAWTYPE::DRAWTYPE_INSUFFICIENT: printf("DRAWTYPE_INSUFFICIENT\n"); break;
+//            case thc::DRAWTYPE::DRAWTYPE_INSUFFICIENT_AUTO: printf("DRAWTYPE_INSUFFICIENT_AUTO\n"); break;
+//            case thc::DRAWTYPE::DRAWTYPE_REPITITION: printf("DRAWTYPE_DRAWTYPE_REPITITION"); break;
+//        }
+//        if(drawType != thc::DRAWTYPE::NOT_DRAW) {
+//            for(int i=0; i<64; i++) {
+//                if(cr.pieceAt(i) == 'k' || cr.pieceAt(i) == 'K')
+//                    led(i,LED_FLASH);
+//            }
+//        }
+
     }
 
     void idlePlay() {
@@ -482,6 +523,11 @@ public:
                             led(i,LED_OFF);
                             state = readState(i);
                         }
+                    } else if(!state && 1 == moveIndex) {
+                        moveType[moveIndex] = MOVE_UP;
+                        moveSquareIndex[moveIndex] = i;
+                        moveIndex++;
+                        led(i,LED_ON);
                     } else {
                         //piece down
                         finishMove(i);
