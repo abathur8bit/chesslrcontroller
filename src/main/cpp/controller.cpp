@@ -83,7 +83,7 @@ public:
 };
 class ControllerServer : public TelnetServer {
 public:
-    enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE};
+    enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE,MODE_SETPOSITION};
 
     BoardRules cr;
     int gameMode;
@@ -154,39 +154,11 @@ public:
         }
 
         const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";
-        cr.Forsyth(fen);
+        setPosition(fen);
         display_position(cr);
-        if(!squareState[toIndex("a3")] || !squareState[toIndex("h3")]) {
-            for(int i=0; i<64; i++) {
-                if(cr.pieceAt(i) == ' ')
-                    led(i,0);
-                else
-                    led(i,1);
-            }
+        if(!isBoardSetup()) {
             printf("Setup your board as shown, white king on left, black king on right\n");
-            printf("Press ENTER when done\n");
-            getchar();
-            clearLeds();
         }
-        for(int i=0; i<64; i++) {
-            squareState[i] = readState(i); //0=empty 1=occupied
-        }
-        printf("Go ahead and move the white king\n");
-
-
-//        int index=0;
-//        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
-//        index=63;
-//        printf("index %d is %c%c\n",index,toCol(index),toRow(index));
-//
-//        char square[3]="A1";
-//        printf("index=%d %s\n",toIndex(square),square);
-//        strcpy(square,"A8");
-//        printf("index=%d %s\n",toIndex(square),square);
-//        strcpy(square,"H1");
-//        printf("index=%d %s\n",toIndex(square),square);
-//        strcpy(square,"H8");
-//        printf("index=%d %s\n",toIndex(square),square);
     }
 
     void processSingleMsg(PacketMessage* pmsg)
@@ -232,6 +204,8 @@ public:
                 setMode(j, jresult);
             } else if(!action.compare("led")) {
                 setLed(j,jresult);
+            } else if(!action.compare("setposition")) {
+                setPosition(j,jresult);
             }
             psocket->println(jresult.dump().c_str());
 
@@ -248,6 +222,20 @@ public:
         int index = toIndex(square.c_str());
         printf("square=%s index=%d\n",square.c_str(),index);
         led(index,!ledState[index]);
+    }
+
+    void setPosition(const char* fen) {
+        cr.Forsyth(fen);
+        for(int i=0; i<64; i++) {
+            squareState[i] = (cr.pieceAt(i)==' ' ? 0:1);
+        }
+        gameMode = isBoardSetup() ? MODE_PLAY:MODE_SETPOSITION;
+    }
+    void setPosition(json& j,json& jresult) {
+        string fen = j["fen"];
+        setPosition(fen.c_str());
+        display_position(cr);
+        jresult["success"] = true;
     }
 
     void setMode(json& j,json& jresult) {
@@ -366,6 +354,7 @@ public:
             case MODE_INSPECT: idleShowPieces(); break;
             case MODE_PLAY: idlePlay(); break;
             case MODE_MOVE: idleMove(); break;
+            case MODE_SETPOSITION: idleSetPos(); break;
         }
     }
 
@@ -515,6 +504,42 @@ public:
             squareState[i] = state;
             led(i,ledState[i]);
         }
+    }
+
+    /** Any squares that need a piece, will be solid. Any square that has a piece that should not
+     * will flash.
+     */
+    void idleSetPos() {
+        //setup what it should look like
+        bool complete=true;
+        for (int i = 0; i < 64; i++) {
+            int state = readState(i);
+            int ledOn = (squareState[i] && state != squareState[i]);
+            if(ledOn)
+                complete=false;
+            led(i,ledOn);
+        }
+        if(complete) {
+            clearLeds();
+            gameMode = MODE_PLAY;
+            json j;
+            j["action"] = "setposition_complete";
+            j["status"] = "complete";
+            printf("%s\n",j.dump().c_str());
+            send2All(j.dump().c_str());
+            send2All("\r\n");
+        }
+    }
+
+    /** Checks if all squares have a piece that should, and the ones that should not, are empty. */
+    bool isBoardSetup() {
+        bool setup=true;
+        for (int i = 0; i < 64; i++) {
+            int state = readState(i);
+            if(state != squareState[i])
+                setup=false;
+        }
+        return setup;
     }
 
     /**
