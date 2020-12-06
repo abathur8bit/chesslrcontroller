@@ -84,6 +84,17 @@ public:
     char pieceAt(int i) {
         return squares[i];
     }
+
+    /**
+     * Returns true if the move is a checking move (ends with '+'. Note
+     * you should do the check before calling PlayMove.
+     *
+     * @param mv Move before it is played.
+     * @return true if it is a check, false otherwise.
+     */
+    bool isCheck(thc::Move mv) {
+        return mv.NaturalOut(this).find_first_of('+') == string::npos ? false:true;
+    }
 };
 class ControllerServer : public TelnetServer {
 public:
@@ -95,7 +106,7 @@ public:
     ChessMove waitMove;     ///< The move the board is waiting for the player to complete.
     char moveType[4]= {'_','_','_','_'};
     int moveSquareIndex[4]={-1,-1,-1,-1};
-    int moveIndex=-1;
+    int moveIndex=0;    ///< Zero indicates not pointing at anything
     int movesNeeded=0;
     int moveFrom;
     int moveTo;
@@ -327,6 +338,7 @@ public:
         psocket->println("Hello");
     }
 
+    /** Returns a string like "a1". */
     char* toMove(char* buffer, size_t n, char col, char row) {
         snprintf(buffer, n, "%c%c", col, row);
         return buffer;
@@ -402,6 +414,12 @@ public:
         }
     }
 
+    /**
+     * Turns on LEDs for any valid destination the piece at fromIndex can make.
+     *
+     * @param fromIndex Square that has the piece player is moving.
+     * @return true if there is at least one valid move, false otherwise.
+     */
     bool showValidSquares(int fromIndex) {
         char bufFrom[5],bufTo[5];
         snprintf(bufFrom, sizeof(bufFrom), "%c%c", toCol(fromIndex), toRow(fromIndex));
@@ -449,35 +467,30 @@ public:
         printf("Position = %s\n", s.c_str());
     }
 
-    void finishMove(int toIndex) {
-        if(toIndex != moveSquareIndex[0]) {
-            char buffer[80];
-            toLAN(buffer, sizeof(buffer), moveSquareIndex[0], toIndex);
-            thc::Move mv;
-            mv.TerseIn(&cr, buffer);
-
-//            printf("full move is %s - %s\n", buffer,mv.NaturalOut(&cr).c_str());
-            json j;
-            j["action"] = "move";
-            j["long"] = mv.TerseOut().c_str();
-            j["san"] = mv.NaturalOut(&cr).c_str();
-            printf("%s\n",j.dump().c_str());
-            send2All(j.dump().c_str());
-            send2All("\r\n");
-            int castle=mv.NaturalOut(&cr).compare("O-O")==0 || mv.NaturalOut(&cr).compare("O-O-O")==0;
-            cr.PlayMove(mv);
-            display_position(cr);
-            if(castle) {
-                //player castled, tell player to move rook
-                std::string fen = cr.ForsythPublish();
-                setPosition(fen.c_str());
+    /** Flash the king of the current player. */
+    void flashKingCheck() {
+        int index=0;
+        for(int i=0; i<64; i++) {
+            if((cr.pieceAt(i) == 'k' && !cr.WhiteToPlay()) || (cr.pieceAt(i) == 'K' && cr.WhiteToPlay())) {
+                index = i;
+                break;
             }
         }
-        moveIndex=-1;
-        clearLeds();
-        for(int i=0; i<64; i++) {
-            squareState[i] = (cr.pieceAt(i)==' ' ? 0:1);
-        }
+
+        long delay=100000;
+        turnOffLeds();  //force the leds off, instead of waiting for next idle call
+        usleep(delay);
+        digitalWrite(output[index],1);
+        usleep(delay);
+        digitalWrite(output[index],0);
+        usleep(delay);
+        digitalWrite(output[index],1);
+        usleep(delay);
+        digitalWrite(output[index],0);
+    }
+
+    /** Look to see if we are in checkmate, and set checkmated king's square to flash. */
+    void evaluateCheckMate() {
         thc::TERMINAL terminal;
         cr.Evaluate(terminal);
         switch(terminal) {
@@ -493,8 +506,13 @@ public:
                     led(i,LED_FLASH);
             }
         }
+    }
 
-//        thc::DRAWTYPE drawType;
+    /** Check if there is a draw. */
+    void evaluateDraw() {
+        //todo lee implement evaluate draw
+
+        //        thc::DRAWTYPE drawType;
 //        cr.IsDraw(cr.WhiteToPlay(),drawType);
 //        switch(drawType) {
 //            case thc::DRAWTYPE::DRAWTYPE_50MOVE: printf("DRAWTYPE_50MOVE\n"); break;
@@ -508,15 +526,60 @@ public:
 //                    led(i,LED_FLASH);
 //            }
 //        }
+    }
 
+    /** Piece was put down, now check what the move was. */
+    void finishMove(int toIndex) {
+        moveIndex = 0;
+        clearLeds();
+        if(toIndex != moveSquareIndex[0]) {
+            //this is a move, player didn't replace the piece on the square they lifted it off from
+            char buffer[5];
+            toLAN(buffer, sizeof(buffer), moveSquareIndex[0], toIndex);
+            thc::Move mv;
+            mv.TerseIn(&cr, buffer);
+//            printf("full move is %s - %s\n", buffer,mv.NaturalOut(&cr).c_str());
+            if(!mv.Valid()) {
+                json j;
+                j["action"] = "invalid_move";
+                j["long"] = buffer;
+                j["san"] = mv.NaturalOut(&cr).c_str();
+                printf("%s\n",j.dump().c_str());
+                send2All(j.dump().c_str());
+                send2All("\r\n");
+                setPosition(cr.ForsythPublish().c_str());
+                return;
+            }
+            string san = mv.NaturalOut(&cr).c_str();
+            bool kingChecked = cr.isCheck(mv);
+            json j;
+            j["action"] = "move";
+            j["long"] = mv.TerseOut().c_str();
+            j["san"] = san;
+            printf("%s\n",j.dump().c_str());
+            send2All(j.dump().c_str());
+            send2All("\r\n");
+            cr.PlayMove(mv);
+            display_position(cr);
+            printf("san=%s check=%d kingChecked=%d\n",san.c_str(),san.find_first_of('+'),kingChecked);
+            if(kingChecked) {
+                flashKingCheck();
+            }
+        }
+        setPosition(cr.ForsythPublish().c_str());
+        evaluateCheckMate();
+        evaluateDraw();
     }
 
     void idlePlay() {
-        char buffer[1024];
+        //check each square to see if its state has changed
         for (int i = 0; i < 64; i++) {
             int state = readState(i);
             if (state != squareState[i]) {
-                snprintf(buffer, sizeof(buffer), "%c%c", toCol(i), toRow(i));
+                //state 0=piece lifted, 1=piece dropped
+                squareState[i] = state;
+                char buffer[5];
+                toMove(buffer, sizeof(buffer), toCol(i), toRow(i));
                 json j;
                 j["action"] = state ? "pieceDown" : "pieceUp";
                 j["square"] = buffer;
@@ -524,44 +587,63 @@ public:
                 send2All(j.dump().c_str());
                 send2All("\r\n");
 
-                if(true) {
-                    if (!state && -1 == moveIndex) {
-                        if(showValidSquares(i)) {
-                            moveType[0] = MOVE_UP;
-                            moveSquareIndex[0] = i;
-                            moveIndex = 1;
-                        } else {
-                            printf("You can't move that piece\n");
-                            while(!readState(i)) {
-                                usleep(100000);
-                                digitalWrite(output[i],1);
-                                usleep(100000);
-                                digitalWrite(output[i],0);
-                                usleep(100000);
-                                digitalWrite(output[i],1);
-                                usleep(100000);
-                                digitalWrite(output[i],0);
-                                usleep(500000);
-                            }
-                            led(i,LED_OFF);
-                            state = readState(i);
-                        }
-                    } else if(!state && 1 == moveIndex) {
+                if (!state && !moveIndex) {
+                    //picked up first piece
+                    printf("picked up first piece\n");
+                    if(showValidSquares(i)) {
                         moveType[moveIndex] = MOVE_UP;
                         moveSquareIndex[moveIndex] = i;
                         moveIndex++;
-                        led(i, LED_ON);
-                    } else if(state && -1 == moveIndex) {
-                        setPosition(cr.ForsythPublish().c_str());
-                        return;
                     } else {
-                        //piece down
-                        finishMove(i);
-                        return; //stop processing squares
+                        //todo lee would like to be able to pick up the piece you are capturing first
+                        printf("You can't move that piece\n");
+                        while(!readState(i)) {
+                            usleep(100000);
+                            digitalWrite(output[i],1);
+                            usleep(100000);
+                            digitalWrite(output[i],0);
+                            usleep(100000);
+                            digitalWrite(output[i],1);
+                            usleep(100000);
+                            digitalWrite(output[i],0);
+                            usleep(300000);
+                        }
+                        led(i,LED_OFF);
+                        squareState[i] = readState(i);
+                        j["action"] = squareState[i] ? "pieceDown" : "pieceUp";
+                        j["square"] = buffer;
+                        printf("%s state=%d moveIndex=%d\n",j.dump().c_str(),state,moveIndex);
+                        send2All(j.dump().c_str());
+                        send2All("\r\n");
                     }
+                } else if(!state && moveIndex<2) {
+                    //picked up another piece
+                    printf("picked up a second piece\n");
+                    moveType[moveIndex] = MOVE_UP;
+                    moveSquareIndex[moveIndex] = i;
+                    moveIndex++;
+                    led(i, LED_ON);
+                } else if(!state && moveIndex>=2) {
+                    //picked up more then 2 pieces
+                    printf("picked up too many pieces\n");
+                    setPosition(cr.ForsythPublish().c_str());
+                } else if(state && !moveIndex) {
+                    //piece down but no piece up, not valid
+                    printf("put down a piece but none picked up\n");
+                    setPosition(cr.ForsythPublish().c_str());
+                } else if(state) {
+                    //piece down
+                    printf("put down piece\n");
+                    moveType[moveIndex] = MOVE_DOWN;
+                    moveSquareIndex[moveIndex] = i;
+                    moveIndex++;
+                    finishMove(i);
+                } else {
+                    printf("WARNING should not get here\n");
+                    assert(false);
                 }
+                break;  //only process one square change at a time
             }
-            squareState[i] = state;
         }
     }
 
