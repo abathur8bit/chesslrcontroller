@@ -533,10 +533,15 @@ public:
                         } else {
                             printf("You can't move that piece\n");
                             while(!readState(i)) {
-                                sleep(1);
+                                usleep(100000);
                                 digitalWrite(output[i],1);
-                                sleep(1);
+                                usleep(100000);
                                 digitalWrite(output[i],0);
+                                usleep(100000);
+                                digitalWrite(output[i],1);
+                                usleep(100000);
+                                digitalWrite(output[i],0);
+                                usleep(500000);
                             }
                             led(i,LED_OFF);
                             state = readState(i);
