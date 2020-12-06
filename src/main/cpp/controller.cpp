@@ -79,6 +79,8 @@ using namespace nlohmann;   //trying this
 #define LED_ON 1
 #define LED_FLASH 3
 
+#define SAN_BUF_SIZE 6
+
 class BoardRules : public thc::ChessRules {
 public:
     char pieceAt(int i) {
@@ -371,20 +373,18 @@ public:
     }
 
     int toIndex(char col,char row) {
-        char buffer[5];
+        char buffer[SAN_BUF_SIZE];
         toMove(buffer,sizeof(buffer),col,row);
         return toIndex(buffer);
     }
 
     //called every FREQ milliseconds
     void idle(unsigned32 now) {
-        char buffer[1024];
         switch(gameMode) {
             case MODE_INSPECT: idleShowPieces(); break;
             case MODE_PLAY: idlePlay(); break;
             case MODE_MOVE: idleMove(); break;
-            case MODE_SETPOSITION:
-                idleSetPosition(); break;
+            case MODE_SETPOSITION: idleSetPosition(); break;
         }
         flasher();
     }
@@ -421,7 +421,7 @@ public:
      * @return true if there is at least one valid move, false otherwise.
      */
     bool showValidSquares(int fromIndex) {
-        char bufFrom[5],bufTo[5];
+        char bufFrom[SAN_BUF_SIZE],bufTo[SAN_BUF_SIZE];
         snprintf(bufFrom, sizeof(bufFrom), "%c%c", toCol(fromIndex), toRow(fromIndex));
 //        printf("Move from %s\n",bufFrom);
 
@@ -450,9 +450,9 @@ public:
 
     /** To long algebraic notation like "a2a3". */
     char* toLAN(char* dest,size_t n,int from,int to) {
-        char bfrom[5];
-        char bto[5];
-        char bmove[5];
+        char bfrom[SAN_BUF_SIZE];
+        char bto[SAN_BUF_SIZE];
+        char bmove[SAN_BUF_SIZE];
         toMove(bfrom,sizeof(bfrom),from);
         toMove(bto,sizeof(bto),to);
         snprintf(dest,n,"%s%s",bfrom,bto);
@@ -534,7 +534,7 @@ public:
         clearLeds();
         if(toIndex != moveSquareIndex[0]) {
             //this is a move, player didn't replace the piece on the square they lifted it off from
-            char buffer[5];
+            char buffer[SAN_BUF_SIZE];
             toLAN(buffer, sizeof(buffer), moveSquareIndex[0], toIndex);
             thc::Move mv;
             mv.TerseIn(&cr, buffer);
@@ -578,7 +578,7 @@ public:
             if (state != squareState[i]) {
                 //state 0=piece lifted, 1=piece dropped
                 squareState[i] = state;
-                char buffer[5];
+                char buffer[SAN_BUF_SIZE];
                 toMove(buffer, sizeof(buffer), toCol(i), toRow(i));
                 json j;
                 j["action"] = state ? "pieceDown" : "pieceUp";
@@ -665,7 +665,7 @@ public:
                         send2All("\r\n");
                     }
                 } else {
-                    char buffer[1024];
+                    char buffer[SAN_BUF_SIZE];
                     snprintf(buffer, sizeof(buffer), "%c%c", toCol(i), toRow(i));
                     json j;
                     j["action"] = state ? "pieceDown" : "pieceUp";
