@@ -129,3 +129,19 @@ fen
 ### Play
 Waits for a command to indicate a move, or to detect when a piece has been lifted. 
 
+# Names
+Some of the old games are chess challenger and chess mate.   
+
+- Cuttlefish Chess. A little play off Stockfish chess engine, and the image can be the cuttlefish holding a chess piece in its tentacle, or holding a king in one, and the crown broken off in the other.
+- pichallenger 
+- pi mate
+- PiMaster
+- PiEChess
+- EGambit2020
+- EChallenger2020
+- PiEGambit, 
+- PiEChallenger, 
+- DandyTandy, 
+- Challenger RS1850
+- TandyChess21 for next year
+- Gecko eChess
