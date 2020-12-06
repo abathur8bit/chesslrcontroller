@@ -115,13 +115,12 @@ public:
     const char* colNames="abcdefgh";
     int mcp[8];
 
+    /** Sets up hardware and socket binding. */
     ControllerServer(SockAddr& saBind,bool swap) : TelnetServer(saBind,FREQ){
         devId=0x20;
         index=0;
         baseInput=250-64*2;
         baseOutput=baseInput+8;
-        memset(squareState,0,sizeof(squareState));
-        gameMode = MODE_PLAY;
 
         wiringPiSetup();
 
@@ -146,8 +145,6 @@ public:
             baseOutput+=16;
         }
 
-        printf("Turning off led's...\n");
-        clearLeds();
         if(swap) {
             // I messed up my wiring, so this fixes it
             int i=8*4+3;
@@ -155,10 +152,16 @@ public:
             input[i]=input[i+1];
             input[i+1]=t;
         }
+    }
+
+    void initGame() {
+        memset(squareState,0,sizeof(squareState));
+        gameMode = MODE_PLAY;
+        printf("Turning off led's...\n");
+        clearLeds();
         for(int i=0; i<64; i++) {
             squareState[i] = readState(i); //0=empty 1=occupied
         }
-
         //const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";    //two kings
 //        const char* fen = "8/8/8/8/4q3/1K2k3/8/8 w - - 0 1";  //a few pieces for testing
         const char* fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; //new game. you can also just not set the fen on a new board instance
@@ -275,8 +278,13 @@ public:
 
     void clearLeds() {
         for(int i=0; i<64; i++) {
-            ledState[i] = 0;
             led(i,LED_OFF);
+        }
+    }
+
+    void turnOffLeds() {
+        for(int i=0; i<64; i++) {
+            digitalWrite(output[i], 0);
         }
     }
 
@@ -512,7 +520,7 @@ public:
                 json j;
                 j["action"] = state ? "pieceDown" : "pieceUp";
                 j["square"] = buffer;
-                printf("%s\n",j.dump().c_str());
+                printf("%s state=%d moveIndex=%d\n",j.dump().c_str(),state,moveIndex);
                 send2All(j.dump().c_str());
                 send2All("\r\n");
 
@@ -537,7 +545,10 @@ public:
                         moveType[moveIndex] = MOVE_UP;
                         moveSquareIndex[moveIndex] = i;
                         moveIndex++;
-                        led(i,LED_ON);
+                        led(i, LED_ON);
+                    } else if(state && -1 == moveIndex) {
+                        setPosition(cr.ForsythPublish().c_str());
+                        return;
                     } else {
                         //piece down
                         finishMove(i);
@@ -646,194 +657,31 @@ public:
     }
 };
 
-char* getString(const char* prompt,char* value,int size) {
-    char* buffer = (char*)calloc(1,size);
-    printf("%s [%s]: ",prompt,value);
-    fgets(buffer,size,stdin);
-    if(strlen(buffer)) {
-        sscanf(buffer,"%s",value);
-    }
-    free(buffer);
-
-    return value;
-}
-
-int getNumber(const char* prompt,int value) {
-    char buffer[80];
-    printf("%s [0x%02X (%d)]: ",prompt,value,value);
-    fgets(buffer,sizeof(buffer),stdin);
-    if(strlen(buffer)) {
-        sscanf(buffer,"%d",&value);
-    }
-
-    return value;
-}
-
-int getBool(const char* prompt,int value) {
-    char buffer[3] = "N";
-    if(value) {
-        strcpy(buffer,"Y");
-    }
-    getString(prompt,buffer,sizeof(buffer));
-    if('y' == buffer[0] || 'Y' == buffer[0])
-        value=1;
-    else
-        value=0;
-
-    return value;
-}
-
-//int writeReg8(int fd,int reg,int data) {
-//    int retval = wiringPiI2CWriteReg8(fd,reg,data);
-//    if(-1 == retval) {
-//        perror("wiringPiI2CWriteReg8");
-//        exit(-1);
-//    }
-//    return retval;
-//}
-//
-//int readReg8(int fd,int reg) {
-//    int data = wiringPiI2CReadReg8(fd,reg);
-//    if(-1 == data) {
-//        perror("wiringPiI2CReadReg8");
-//        exit(-1);
-//    }
-//    return data;
-//}
-
-void readRow(int base,int* rowState) {
-    int i;
-    for(i=0; i<8; i++) {
-        rowState[i] = digitalRead(base+i);
-    }
-}
-
-void showRow(int base,int* rowState) {
-    int i;
-    for(i=0; i<8; i++) {
-        digitalWrite(base+i,rowState[7-i]?0:1);
-    }
-}
-
-void testRow(int argc,char* argv[]) {
-    int i;
-    int devId = 0x27;
-    int rowState[8]={1,1,1,1,1,1,1,1};
-
-    printf("MCP Tester %s\n",VERSION);
-    if(1 == argc) {
-        devId = getNumber("i2c device id",devId);
-
-        printf("\n");
-    }
-
-    printf("Device ID: %02XH (%03d)\n",devId,devId);
-
-    wiringPiSetup();
-//    wiringPiSetupGpio();	//use BCM pin numbers
-    int mcp = mcp23017Setup(BASE_I2C,devId);
-    if(mcp<0)
-        perror("wiringPiI2CSetup");
-
-    for(i=0; i<8; i++) {
-        pinMode(BASE_I2C_OUTPUT+i,OUTPUT);
-        pinMode(BASE_I2C_INPUT+i,INPUT);
-        pullUpDnControl (BASE_I2C_INPUT+i,PUD_UP);
-    }
-
-    printf("square lights up when piece down\n");
-    int counter=0;
-    while(1) {
-        readRow(BASE_I2C_INPUT,rowState);
-        showRow(BASE_I2C_OUTPUT,rowState);
-        delay(10);
-    }
-
-    printf("done\n");
-
-}
-
-void allrows(bool swap) {
-    int devId=0x20;
-    int index=0;
-    int baseInput=250-64*2;
-    int baseOutput=baseInput+8;
-    int input[64];
-    int output[64];
-    int mcp[8];
-
-    wiringPiSetup();
-
-    for(int row = 0; row<8; ++row) {
-        mcp[row]=mcp23017Setup(baseInput,devId+row);
-        if(mcp[row]<0)
-            perror("wiringPiI2CSetup");
-
-        for(int col=0; col<8; col++) {
-            int inputCol = col;
-            int outputCol = 7-col;
-            pinMode(baseInput+inputCol,INPUT);
-            pullUpDnControl(baseInput+inputCol,PUD_UP);
-            pinMode(baseOutput+outputCol,OUTPUT);
-
-            input[index]=baseInput+inputCol;
-            output[index]=baseOutput+outputCol;
-
-            ++index;
-        }
-        baseInput+=16;
-        baseOutput+=16;
-    }
-
-//    while(true) {
-//        for(int i=0; i<64; i++) {
-//                digitalWrite(output[i],0);
-//                delay(50);
-//        }
-//        for(int i=0; i<64; i++) {
-//                digitalWrite(output[i],1);
-//                delay(50);
-//        }
-//    }
-
-    printf("Turning off led's...\n");
-    for(int i=0; i<64; i++) {
-        digitalWrite(output[i],0);
-    }
-    if(swap) {
-        int i=8*4+3;
-        int t=input[i];
-        input[i]=input[i+1];
-        input[i+1]=t;
-    }
-    printf("Press any key\n");
-    getchar();
-    printf("Place pieces, square lights up when piece is down\n");
-    while(true) {
-        for(int i=0; i<64; i++) {
-            int state = digitalRead(input[i]);
-            digitalWrite(output[i],state?0:1);
-        }
-        delay(10);
-    }
-}
-
 int main(int argc,char* argv[]) {
     bool swap=false;
+    bool turnOffLeds=false;
     unsigned16 wPort = 9999;
     for(int i=0; i<argc; i++) {
         if(!strcmp(argv[i],"-s")) {
             swap=true;
         } else if(!strcmp(argv[i],"-p")) {
             wPort = atoi(argv[++i]);
+        } else if(!strcmp(argv[i],"--leds-off")) {
+            turnOffLeds=true;
         }
     }
     printf("Binding to port %d\n",wPort);
     SockAddr saBind((ULONG)INADDR_ANY,wPort);
     printf("construction\n");
     ControllerServer server(saBind,swap);
-    printf("server running on port %d\n",wPort);
-    server.startServer();
+    if(turnOffLeds) {
+        printf("Turning off leds\n");
+        server.turnOffLeds();
+    } else {
+        printf("server running on port %d\n", wPort);
+        server.initGame();
+        server.startServer();
+    }
     printf("Server finished\n");
     return 0;
 }
