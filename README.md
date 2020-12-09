@@ -8,7 +8,9 @@ The other reason was to allow for being able to connect from a desktop computer,
 **Status:** In progress. Currently prototyping.
 
 # Compiling and Running
-You need to have [ssobjects](https://github.com/abathur8bit/ssobjects) installed to compile chess controller, as it uses the network to allow remote connections.
+You need to have
+- [ssobjects](https://github.com/abathur8bit/ssobjects) installed to compile chess controller, as it uses the network to allow remote connections.
+- [nlohmann json](https://github.com/nlohmann/json) for json parsing and creation.
 
 ## Compile chesslrcontroller
 
@@ -85,6 +87,10 @@ Sample for a normal move:
 
     {"action":"move","description":null,"moves":[{"from":"e1","to":"g1","type":"move"}]}
     {"action":"move","description":null,"moves":[{"from":"a2","to":"a3","type":"move"}]}
+    {"action":"move","description":null,"moves":[{"from":"a7","to":"a6","type":"move"}]}
+    {"action":"move","description":null,"moves":[{"from":"a3","to":"a4","type":"move"}]}
+    {"action":"move","description":null,"moves":[{"from":"b7","to":"b5","type":"move"}]}
+    {"action":"move","description":null,"moves":[{"from":"a1","to":"a3","type":"move"}]}
 
 And another for castling short:
 

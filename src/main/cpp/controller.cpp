@@ -59,7 +59,8 @@
 #include "chessmove.hpp"
 #include "chessaction.hpp"
 
-#define VERSION "1.0"
+#define TITLE "ChessLR"
+#define VERSION "0.1.0"
 
 #define WAIT_SLOW 500
 #define WAIT_FAST 100
@@ -79,7 +80,7 @@ using namespace nlohmann;   //trying this
 #define LED_ON 1
 #define LED_FLASH 3
 
-#define SAN_BUF_SIZE 6
+#define SAN_BUF_SIZE 6      ///< Minimum buffer size to hold a san or long san move. Something like long "h7h8q" or san "h8=Q+"
 
 class BoardRules : public thc::ChessRules {
 public:
@@ -102,28 +103,23 @@ class ControllerServer : public TelnetServer {
 public:
     enum {MODE_SETUP,MODE_INSPECT,MODE_PLAY,MODE_MOVE,MODE_SETPOSITION,MODE_MATE};
 
-    BoardRules cr;
+    BoardRules rules;
     int gameMode;
     int flashState=0;
-    ChessMove waitMove;     ///< The move the board is waiting for the player to complete.
+    ChessMove waitMove;         ///< The move the board is waiting for the player to complete.
     char moveType[4]= {'_','_','_','_'};
     int moveSquareIndex[4]={-1,-1,-1,-1};
-    int moveIndex=0;    ///< Zero indicates not pointing at anything
+    int moveIndex=0;            ///< Zero indicates not pointing at anything.
     int movesNeeded=0;
-    int moveFrom;
-    int moveTo;
-    bool moveCaptures;
     enum {FREQ=10};
     int devId;
     int index;
     int baseInput;
     int baseOutput;
-    int input[64];          ///< Pin map for input. You use in your digitalRead calls like **digitalRead(input[squareIndex])**.
-    int output[64];         ///< Pin map for output. You use in your digitalWrite calls digitalWrite(output[squareIndex],state);. 1=on, 0=off.
-    int squareState[64];    ///< What the board is currently seeing. When a piece is lifted or dropped, this gets updated. 0=empty, 1=occupied
-    int ledState[64];       ///< What the LEDs are displaying. If you change this, it will immediately change what is displayed.
-    int ledFlash[64];       ///< If set, an LED should be flashing.
-    int board[64];          ///< What the board should look like. If this and square state are different, then we are in the process of moving/capturing a piece.
+    int input[64];              ///< Pin map for input. You use in your digitalRead calls like **digitalRead(input[squareIndex])**.
+    int output[64];             ///< Pin map for output. You use in your digitalWrite calls digitalWrite(output[squareIndex],state);. 1=on, 0=off.
+    int squareState[64];        ///< What the board is currently seeing. When a piece is lifted or dropped, this gets updated. 0=empty, 1=occupied
+    int ledState[64];           ///< What the LEDs are displaying. If you change this, it will immediately change what is displayed.
     const char* rowNames="87654321";
     const char* colNames="abcdefgh";
     int mcp[8];
@@ -175,11 +171,11 @@ public:
         for(int i=0; i<64; i++) {
             squareState[i] = readState(i); //0=empty 1=occupied
         }
-        //const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";    //two kings
+//        const char* fen = "8/8/8/8/8/K6k/8/8 w - - 0 1";    //two kings
 //        const char* fen = "8/8/8/8/4q3/1K2k3/8/8 w - - 0 1";  //a few pieces for testing
-        const char* fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; //new game. you can also just not set the fen on a new board instance
+        const char* fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; //a new game. you can also just not set the fen on a new board instance
         setPosition(fen);
-        display_position(cr);
+        display_position(rules);
         if(!isBoardSetup()) {
             printf("Setup your board as shown, white king on left, black king on right\n");
         }
@@ -222,16 +218,20 @@ public:
             printf("parsed and have action = %s\n",action.c_str());
             if(!action.compare("move")) {
                 doMove(psocket,pszString);
+                psocket->println(jresult.dump().c_str());
             } else if(!action.compare("ping")) {
                 psocket->println("pong");
+                psocket->println(jresult.dump().c_str());
             } else if(!action.compare("setmode")) {
                 setMode(j, jresult);
+                psocket->println(jresult.dump().c_str());
             } else if(!action.compare("led")) {
                 setLed(j,jresult);
+                psocket->println(jresult.dump().c_str());
             } else if(!action.compare("setposition")) {
                 setPosition(j,jresult);
+                psocket->println(jresult.dump().c_str());
             }
-            psocket->println(jresult.dump().c_str());
 
         } catch(json::parse_error& e) {
             psocket->println("json parse error: %s",e.what());
@@ -250,16 +250,16 @@ public:
 
     void setPosition(const char* fen) {
         clearLeds();
-        cr.Forsyth(fen);
+        rules.Forsyth(fen);
         for(int i=0; i<64; i++) {
-            squareState[i] = (cr.pieceAt(i)==' ' ? 0:1);
+            squareState[i] = (rules.pieceAt(i) == ' ' ? 0 : 1);
         }
         gameMode = isBoardSetup() ? MODE_PLAY:MODE_SETPOSITION;
     }
     void setPosition(json& j,json& jresult) {
         string fen = j["fen"];
         setPosition(fen.c_str());
-        display_position(cr);
+        display_position(rules);
         jresult["success"] = true;
     }
 
@@ -337,7 +337,7 @@ public:
     void onConnection(PacketMessage* pmsg)
     {
         TelnetServerSocket* psocket = (TelnetServerSocket*)pmsg->socket();
-        psocket->println("Hello");
+        psocket->println("Welcome to %s v%s", TITLE,VERSION);
     }
 
     /** Returns a string like "a1". */
@@ -429,7 +429,7 @@ public:
         std::vector<bool> check;
         std::vector<bool> mate;
         std::vector<bool> stalemate;
-        cr.GenLegalMoveList(moves, check, mate, stalemate);
+        rules.GenLegalMoveList(moves, check, mate, stalemate);
         unsigned int len = moves.size();
         int validMoves=0;
         clearLeds();
@@ -471,7 +471,7 @@ public:
     void flashKingCheck() {
         int index=0;
         for(int i=0; i<64; i++) {
-            if((cr.pieceAt(i) == 'k' && !cr.WhiteToPlay()) || (cr.pieceAt(i) == 'K' && cr.WhiteToPlay())) {
+            if((rules.pieceAt(i) == 'k' && !rules.WhiteToPlay()) || (rules.pieceAt(i) == 'K' && rules.WhiteToPlay())) {
                 index = i;
                 break;
             }
@@ -492,7 +492,7 @@ public:
     /** Look to see if we are in checkmate, and set checkmated king's square to flash. */
     void evaluateCheckMate() {
         thc::TERMINAL terminal;
-        cr.Evaluate(terminal);
+        rules.Evaluate(terminal);
         switch(terminal) {
             case thc::TERMINAL::TERMINAL_BCHECKMATE: printf("black checkmate\n"); break;
             case thc::TERMINAL::TERMINAL_WCHECKMATE: printf("white checkmate\n"); break;
@@ -500,9 +500,9 @@ public:
         if(terminal==thc::TERMINAL::TERMINAL_BCHECKMATE || terminal==thc::TERMINAL::TERMINAL_WCHECKMATE) {
             gameMode=MODE_MATE;
             for(int i=0; i<64; i++) {
-                if(cr.pieceAt(i) == 'k' && terminal==thc::TERMINAL::TERMINAL_BCHECKMATE)
+                if(rules.pieceAt(i) == 'k' && terminal == thc::TERMINAL::TERMINAL_BCHECKMATE)
                     led(i,LED_FLASH);
-                else if(cr.pieceAt(i) == 'K' && terminal==thc::TERMINAL::TERMINAL_WCHECKMATE)
+                else if(rules.pieceAt(i) == 'K' && terminal == thc::TERMINAL::TERMINAL_WCHECKMATE)
                     led(i,LED_FLASH);
             }
         }
@@ -513,7 +513,7 @@ public:
         //todo lee implement evaluate draw
 
         //        thc::DRAWTYPE drawType;
-//        cr.IsDraw(cr.WhiteToPlay(),drawType);
+//        rules.IsDraw(rules.WhiteToPlay(),drawType);
 //        switch(drawType) {
 //            case thc::DRAWTYPE::DRAWTYPE_50MOVE: printf("DRAWTYPE_50MOVE\n"); break;
 //            case thc::DRAWTYPE::DRAWTYPE_INSUFFICIENT: printf("DRAWTYPE_INSUFFICIENT\n"); break;
@@ -522,7 +522,7 @@ public:
 //        }
 //        if(drawType != thc::DRAWTYPE::NOT_DRAW) {
 //            for(int i=0; i<64; i++) {
-//                if(cr.pieceAt(i) == 'k' || cr.pieceAt(i) == 'K')
+//                if(rules.pieceAt(i) == 'k' || rules.pieceAt(i) == 'K')
 //                    led(i,LED_FLASH);
 //            }
 //        }
@@ -537,36 +537,48 @@ public:
             char buffer[SAN_BUF_SIZE];
             toLAN(buffer, sizeof(buffer), moveSquareIndex[0], toIndex);
             thc::Move mv;
-            mv.TerseIn(&cr, buffer);
-//            printf("full move is %s - %s\n", buffer,mv.NaturalOut(&cr).c_str());
+            mv.TerseIn(&rules, buffer);
+//            printf("full move is %s - %s\n", buffer,mv.NaturalOut(&rules).c_str());
             if(!mv.Valid()) {
                 json j;
                 j["action"] = "invalid_move";
-                j["long"] = buffer;
-                j["san"] = mv.NaturalOut(&cr).c_str();
+                j["long"] = mv.TerseOut();
+                j["san"] = mv.NaturalOut(&rules);
                 printf("%s\n",j.dump().c_str());
                 send2All(j.dump().c_str());
                 send2All("\r\n");
-                setPosition(cr.ForsythPublish().c_str());
+                setPosition(rules.ForsythPublish().c_str());
                 return;
             }
-            string san = mv.NaturalOut(&cr).c_str();
-            bool kingChecked = cr.isCheck(mv);
+            string san = mv.NaturalOut(&rules).c_str();
+            bool kingChecked = rules.isCheck(mv);
+            bool capture = mv.NaturalOut(&rules).find('x')!=string::npos;
+
+            vector<json> moveList;
+            json move;
+            move["type"]=capture ? "capture":"move";
+            move["from"]=toMove(buffer,sizeof(buffer),moveSquareIndex[0]);
+            move["to"]=toMove(buffer,sizeof(buffer),toIndex);
+            move["long"] = mv.TerseOut().c_str();
+            move["san"] = san;
+            moveList.push_back(move);
+
             json j;
             j["action"] = "move";
-            j["long"] = mv.TerseOut().c_str();
-            j["san"] = san;
+            j["description"] = nullptr;
+            j["moves"]=moveList;
             printf("%s\n",j.dump().c_str());
+
             send2All(j.dump().c_str());
             send2All("\r\n");
-            cr.PlayMove(mv);
-            display_position(cr);
+            rules.PlayMove(mv);
+            display_position(rules);
             printf("san=%s check=%d kingChecked=%d\n",san.c_str(),san.find_first_of('+'),kingChecked);
             if(kingChecked) {
                 flashKingCheck();
             }
         }
-        setPosition(cr.ForsythPublish().c_str());
+        setPosition(rules.ForsythPublish().c_str());
         evaluateCheckMate();
         evaluateDraw();
     }
@@ -626,11 +638,11 @@ public:
                 } else if(!state && moveIndex>=2) {
                     //picked up more then 2 pieces
                     printf("picked up too many pieces\n");
-                    setPosition(cr.ForsythPublish().c_str());
+                    setPosition(rules.ForsythPublish().c_str());
                 } else if(state && !moveIndex) {
                     //piece down but no piece up, not valid
                     printf("put down a piece but none picked up\n");
-                    setPosition(cr.ForsythPublish().c_str());
+                    setPosition(rules.ForsythPublish().c_str());
                 } else if(state) {
                     //piece down
                     printf("put down piece\n");
@@ -660,9 +672,10 @@ public:
                     moveIndex++;
                     if(moveIndex == movesNeeded) {
                         gameMode = MODE_PLAY;
-                        printf("Move finished %s\n",waitMove.tojson().dump().c_str());
+                        printf("Move finished json=\n",waitMove.tojson().dump().c_str());
                         send2All(waitMove.tojson().dump().c_str());
                         send2All("\r\n");
+                        finishMove(moveSquareIndex[moveIndex-1]);
                     }
                 } else {
                     char buffer[SAN_BUF_SIZE];
@@ -709,7 +722,7 @@ public:
         }
     }
 
-    /** Checks if all squares have a piece that should, and the ones that should not, are empty. */
+    /** Checks if all squares have a piece that should, and the ones that should not are empty. */
     bool isBoardSetup() {
         bool setup=true;
         for (int i = 0; i < 64; i++) {
@@ -739,6 +752,7 @@ public:
         return state==0;
     }
 
+    /** Sets the LED state, doesn't actually turn on/off the led. */
     void led(int index,int state) {
         ledState[index] = state;
     }
@@ -759,16 +773,15 @@ int main(int argc,char* argv[]) {
     }
     printf("Binding to port %d\n",wPort);
     SockAddr saBind((ULONG)INADDR_ANY,wPort);
-    printf("construction\n");
+    printf("%s runs on port %d\n",TITLE,wPort);
     ControllerServer server(saBind,swap);
     if(turnOffLeds) {
         printf("Turning off leds\n");
         server.turnOffLeds();
     } else {
-        printf("server running on port %d\n", wPort);
         server.initGame();
         server.startServer();
     }
-    printf("Server finished\n");
+    printf("%s finished\n",TITLE);
     return 0;
 }
