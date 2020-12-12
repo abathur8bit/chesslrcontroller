@@ -135,7 +135,7 @@ fen
 ### Play
 Waits for a command to indicate a move, or to detect when a piece has been lifted. 
 
-# Names
+# ChessLR replacement Names
 Some of the old games are chess challenger and chess mate.   
 
 - Cuttlefish Chess. A little play off Stockfish chess engine, and the image can be the cuttlefish holding a chess piece in its tentacle, or holding a king in one, and the crown broken off in the other.
@@ -151,3 +151,13 @@ Some of the old games are chess challenger and chess mate.
 - Challenger RS1850
 - TandyChess21 for next year
 - Gecko eChess
+
+# Referance links
+- [Lichess API](https://lichess.org/api)
+- [ChessBot API](https://github.com/ShailChoksi/lichess-bot)
+
+# Lichess
+I am considering the idea of connecting ChessLR to Lichess so I can use my eboard to play against people. Using their API I can create games, submit moves, and get moves from the other player on Lichess. The connection to Lichess will be via the GUI that connects to chesslrcontroller.
+
+## Explore moves
+Rather then submitting the move right away, a mode called **explore moves** will let you make as many moves for white and black as you want without submitting your move. You can hit a button to put the board back to the saved position and try different a variant. When you want to submit the move to lichess, you can make the move and tap a submit button and the move is sent to Lichess. 

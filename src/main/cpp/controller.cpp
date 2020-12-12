@@ -319,6 +319,15 @@ public:
             moveSquareIndex[1] = ca->move(index).toIndex();
             moveSquareIndex[2] = ca->move(index).toIndex();
             movesNeeded = 3;
+        } else if(!strcmp(ca->move(index).type(),"takeback_capture")) {
+            moveType[0] = MOVE_UP;
+            moveType[1] = MOVE_DOWN;
+            moveType[2] = MOVE_DOWN;
+            moveSquareIndex[0] = ca->move(index).fromIndex();
+            moveSquareIndex[1] = ca->move(index).fromIndex();
+            moveSquareIndex[2] = ca->move(index).toIndex();
+            led(ca->move(index).fromIndex(),LED_FLASH);
+            movesNeeded = 3;
         } else {
             moveType[0] = MOVE_UP;
             moveType[1] = MOVE_DOWN;
