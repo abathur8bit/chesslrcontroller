@@ -214,23 +214,25 @@ public:
             jresult["success"]=false;
             jresult["code"]=nullptr;
             jresult["message"]=nullptr;
-            string action = j["action"];
-            printf("parsed and have action = %s\n",action.c_str());
-            if(!action.compare("move")) {
-                doMove(psocket,pszString);
-                psocket->println(jresult.dump().c_str());
-            } else if(!action.compare("ping")) {
-                psocket->println("pong");
-                psocket->println(jresult.dump().c_str());
-            } else if(!action.compare("setmode")) {
-                setMode(j, jresult);
-                psocket->println(jresult.dump().c_str());
-            } else if(!action.compare("led")) {
-                setLed(j,jresult);
-                psocket->println(jresult.dump().c_str());
-            } else if(!action.compare("setposition")) {
-                setPosition(j,jresult);
-                psocket->println(jresult.dump().c_str());
+            if(j.contains("action")) {
+                string action = j["action"];
+                printf("parsed and have action = %s\n", action.c_str());
+                if (!action.compare("move")) {
+                    doMove(psocket, pszString);
+                    psocket->println(jresult.dump().c_str());
+                } else if (!action.compare("ping")) {
+                    psocket->println("pong");
+                    psocket->println(jresult.dump().c_str());
+                } else if (!action.compare("setmode")) {
+                    setMode(j, jresult);
+                    psocket->println(jresult.dump().c_str());
+                } else if (!action.compare("led")) {
+                    setLed(j, jresult);
+                    psocket->println(jresult.dump().c_str());
+                } else if (!action.compare("setposition")) {
+                    setPosition(j, jresult);
+                    psocket->println(jresult.dump().c_str());
+                }
             }
 
         } catch(json::parse_error& e) {
